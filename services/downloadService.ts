@@ -271,7 +271,8 @@ class DownloadService {
 
       item.status = 'completed';
       item.progress = 100;
-      item.filePath = downloadResult.uri;
+      // Use downloadResult.uri if available, otherwise use the original filePath
+      item.filePath = downloadResult?.uri || filePath;
       item.downloadedAt = new Date().toISOString();
       
       this.downloads.set(id, item);

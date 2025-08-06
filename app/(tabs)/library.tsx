@@ -233,19 +233,19 @@ export default function LibraryTab() {
               <View key={item.id} style={styles.contentCard}>
                 <View style={styles.contentHeader}>
                   <View style={styles.platformBadge}>
-                    <Text style={styles.platformText}>{String(formatPlatformName(item.platform) || 'Unknown')}</Text>
+                    <Text style={styles.platformText}>{formatPlatformName(item.platform)}</Text>
                   </View>
                   <View style={[
                     styles.statusBadge,
                     { backgroundColor: getStatusColor(item.status) }
                   ]}>
-                    <Text style={styles.statusText}>{String(item.status || 'unknown')}</Text>
+                    <Text style={styles.statusText}>{item.status}</Text>
                   </View>
                 </View>
                 
                 <View style={styles.contentInfo}>
                   <Text style={styles.contentTitle} numberOfLines={2}>
-                    {String(item.title || 'Untitled')}
+                    {item.title || 'Untitled'}
                   </Text>
                   <Text style={styles.downloadDate}>
                     {item.downloadedAt ? `Downloaded ${formatDate(item.downloadedAt)}` : 'In progress...'}
@@ -258,13 +258,13 @@ export default function LibraryTab() {
                           style={[styles.progressFill, { width: `${Math.round(item.progress || 0)}%` }]} 
                         />
                       </View>
-                      <Text style={styles.progressText}>{String(Math.round(item.progress || 0))}%</Text>
+                      <Text style={styles.progressText}>{Math.round(item.progress || 0)}%</Text>
                     </View>
                   )}
                   
                   {item.filePath && (
                     <Text style={styles.filePath} numberOfLines={1}>
-                      File: {String(item.filePath?.split('/').pop() || 'Unknown')}
+                      File: {item.filePath?.split('/').pop() || 'Unknown'}
                     </Text>
                   )}
                 </View>
