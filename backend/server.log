@@ -1,41 +1,177 @@
 Social Media Downloader Backend running on port 3003
 Health check: http://localhost:3003/api/health
 Available endpoints:
+  POST /api/spotify - Download Spotify tracks/podcasts
   POST /api/youtube - Download YouTube videos
   POST /api/youtube-ytdlp - Download YouTube videos using yt-dlp
-  POST /api/instagram - Download Instagram content using Instaloader
+  POST /api/instagram - Download Instagram content
   POST /api/tiktok - Download TikTok videos
   POST /api/twitter - Download Twitter/X videos and posts
-  POST /api/podcast - Download podcast episodes from RSS feeds
   POST /api/facebook - Download Facebook videos
   POST /api/linkedin - Download LinkedIn videos and posts
-  POST /api/download - Generic download endpoint
-2025-08-06T05:53:27.262Z - GET /api/health
-2025-08-06T05:53:27.283Z - POST /api/tiktok
-TikTok: Processing URL via Snaptik API: https://www.tiktok.com/@username/video/7234567890123456789
-2025-08-06T05:53:30.207Z - POST /api/instagram
-Instagram: Processing URL via InDown.io API: https://www.instagram.com/p/DM84BuhRsdT/
-Instagram: InDown.io API failed, trying FastDl... Request failed with status code 419
-Instagram: Both APIs failed, creating info file... Request failed with status code 404
-2025-08-06T05:53:56.671Z - POST /api/twitter
-Twitter: Processing URL via ssstwitter API: https://twitter.com/elonmusk/status/1951374490228891988
-Twitter: ssstwitter API failed, trying x-downloader... Request failed with status code 401
-Twitter: Both APIs failed, creating info file... Request failed with status code 405
-2025-08-06T05:53:57.827Z - POST /api/facebook
-Facebook: Processing URL via FDown.net API: https://www.facebook.com/watch/?v=123456789
-Facebook: FDown.net API failed, trying SnapSave... Request failed with status code 403
-Facebook: Both APIs failed, creating info file... timeout of 25000ms exceeded
-2025-08-06T05:54:22.976Z - POST /api/linkedin
-LinkedIn: Processing URL via enhanced content extraction: https://www.linkedin.com/posts/someuser_post-123456
-LinkedIn: Content extraction failed, creating info file... Request failed with status code 404
-2025-08-06T05:54:23.197Z - POST /api/youtube-ytdlp
-2025-08-06T12:54:19.044Z - POST /api/twitter
-Twitter: Processing URL via ssstwitter API: https://twitter.com/elonmusk/status/1948042205593268442
-Twitter: ssstwitter API failed, trying x-downloader... Request failed with status code 401
-Twitter: Both APIs failed, creating info file... Request failed with status code 405
-2025-08-06T12:54:20.192Z - GET /api/file/Twitter_Info_1754484859045.txt
-2025-08-06T12:56:49.496Z - POST /api/twitter
-Twitter: Processing URL via ssstwitter API: https://twitter.com/SpaceX/status/1759402181933437804
-Twitter: ssstwitter API failed, trying x-downloader... Request failed with status code 401
-Twitter: Both APIs failed, creating info file... Request failed with status code 405
-2025-08-06T12:56:51.515Z - GET /api/file/Twitter_Info_1754485009496.txt
+2025-08-06T17:05:17.960Z - POST /api/facebook
+Facebook: Processing URL: https://www.facebook.com/LifeWithGaitlyn/videos/314846414760933/
+Facebook raw contentInfo: {"title": "545K views \u00b7 15K reactions | Gaitlyn Rae on Reels", "description": "", "uploader": "545K views &#xb7; 15K reactions | Gaitlyn Rae on Reels", "uploader_id": "100077486873600", "thumbnai...
+Facebook parsed: {
+  title: '545K views · 15K reactions | Gaitlyn Rae on Reels',
+  duration: 30.1,
+  uploader: '545K views &#xb7; 15',
+  hasVideo: true
+}
+Facebook: Starting download with format: best[ext=mp4]/best
+Facebook: yt-dlp exit code: 0
+Facebook: stdout: [facebook] Extracting URL: https://www.facebook.com/LifeWithGaitlyn/videos/314846414760933/
+[facebook] 314846414760933: Downloading webpage
+[info] 314846414760933: Downloading 1 format(s): hd
+[download] Destination: /Users/username/Downloads/project 2/backend/downloads/545K_views___15K_reactions___Gaitlyn_Rae_on_Reels_1754499919690.mp4
+[download]   0.0% of    4.44MiB at  438.96KiB/s ETA 00:10[download]   0.1% of    4.44MiB at    1.11MiB/s ETA 00:04[download]   0.2% of    4.44MiB at    2.43MiB/s ETA 00:01[download]   0.3% of    4.44MiB at  856.21KiB/s ETA 00:05[download]   0.7% of    4.44MiB at    1.21MiB/s ETA 00:03[download]   1.4% of    4.44MiB at    1.56MiB/s ETA 00:02[download]   2.8% of    4.44MiB at    2.26MiB/s ETA 00:01[download]   5.6% of    4.44MiB at    3.27MiB/s ETA 00:01[download]  11.2% of    4.44MiB at    5.03MiB/s ETA 00:00[download]  22.5% of    4.44MiB at    8.11MiB/s ETA 00:00[download]  45.0% of    4.44MiB at   13.52MiB/s ETA 00:00[download]  90.0% of    4.44MiB at   21.68MiB/s ETA 00:00[download] 100.0% of    4.44MiB at   23.51MiB/s ETA 00:00[download] 100% of    4.44MiB in 00:00:00 at 15.98MiB/s  
+
+Facebook: stderr: /Users/username/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+2025-08-06T17:10:53.198Z - POST /api/spotify
+Spotify: Processing URL: https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk
+Spotify spotdl stdout: Processing query: https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk       
+AudioProviderError: YT-DLP download error -                                     
+https://music.youtube.com/watch?v=7aTdA4DT-yU                                   
+
+
+Spotify spotdl stderr: /Users/username/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+Spotify spotdl exit code: 0
+2025-08-06T17:11:08.656Z - POST /api/youtube-ytdlp
+2025-08-06T17:11:21.157Z - POST /api/instagram
+Instagram: Processing URL: https://www.instagram.com/reel/DMfor54JqVc/
+Instagram: Starting download with format: best[ext=mp4]/best
+Instagram: yt-dlp exit code: 0
+Instagram: stdout: [Instagram] Extracting URL: https://www.instagram.com/reel/DMfor54JqVc/
+[Instagram] DMfor54JqVc: Setting up session
+[Instagram] DMfor54JqVc: Downloading JSON metadata
+[info] DMfor54JqVc: Downloading 1 format(s): 3
+[download] Destination: /Users/username/Downloads/project 2/backend/downloads/Video_by_hysterical_wisteria_1754500282079.mp4
+[download]   0.1% of    1.40MiB at  448.64KiB/s ETA 00:03[download]   0.2% of    1.40MiB at  789.69KiB/s ETA 00:01[download]   0.5% of    1.40MiB at    1.54MiB/s ETA 00:00[download]   1.0% of    1.40MiB at  642.18KiB/s ETA 00:02[download]   2.2% of    1.40MiB at  930.73KiB/s ETA 00:01[download]   4.4% of    1.40MiB at    1.23MiB/s ETA 00:01[download]   8.8% of    1.40MiB at    1.69MiB/s ETA 00:00[download]  17.7% of    1.40MiB at    2.60MiB/s ETA 00:00[download]  35.5% of    1.40MiB at    3.98MiB/s ETA 00:00[download]  71.1% of    1.40MiB at    6.41MiB/s ETA 00:00[download] 100.0% of    1.40MiB at    8.36MiB/s ETA 00:00[download] 100% of    1.40MiB in 00:00:00 at 4.70MiB/s   
+
+Instagram: stderr: /Users/username/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+2025-08-06T17:11:29.359Z - POST /api/facebook
+Facebook: Processing URL: https://www.facebook.com/LifeWithGaitlyn/videos/314846414760933/
+Facebook raw contentInfo: ...
+Facebook JSON parse error: Unexpected end of JSON input
+Raw content length: 0
+Facebook: Assuming video content for /videos/ URL
+Facebook: Starting download with format: best[ext=mp4]/best
+Facebook: yt-dlp exit code: 0
+Facebook: stdout: [facebook] Extracting URL: https://www.facebook.com/LifeWithGaitlyn/videos/314846414760933/
+[facebook] 314846414760933: Downloading webpage
+[info] 314846414760933: Downloading 1 format(s): hd
+[download] Destination: /Users/username/Downloads/project 2/backend/downloads/Facebook_Video_1754500291300.mp4
+[download]   0.0% of    4.44MiB at  Unknown B/s ETA Unknown[download]   0.1% of    4.44MiB at  785.55KiB/s ETA 00:05  [download]   0.2% of    4.44MiB at    1.61MiB/s ETA 00:02[download]   0.3% of    4.44MiB at  567.58KiB/s ETA 00:07[download]   0.7% of    4.44MiB at  905.11KiB/s ETA 00:04[download]   1.4% of    4.44MiB at    1.21MiB/s ETA 00:03[download]   2.8% of    4.44MiB at    1.62MiB/s ETA 00:02[download]   5.6% of    4.44MiB at    2.27MiB/s ETA 00:01[download]  11.2% of    4.44MiB at    3.62MiB/s ETA 00:01[download]  22.5% of    4.44MiB at    5.86MiB/s ETA 00:00[download]  45.0% of    4.44MiB at   10.07MiB/s ETA 00:00[download]  90.0% of    4.44MiB at   16.42MiB/s ETA 00:00[download] 100.0% of    4.44MiB at   17.46MiB/s ETA 00:00[download] 100% of    4.44MiB in 00:00:00 at 11.97MiB/s  
+
+Facebook: stderr: /Users/username/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+2025-08-06T17:11:40.694Z - POST /api/linkedin
+LinkedIn: Processing URL: https://www.linkedin.com/posts/allan-guo_im-excited-to-announce-that-willow-yc-x25-activity-7350951044551462912-u7h3
+LinkedIn parsing: {
+  title: 'I&#39;m excited to announce th',
+  uploader: ' LinkedIn',
+  viewCount: 'NA',
+  duration: ' Allan Guo posted on the topic ',
+  description: 'NA'
+}
+LinkedIn: Text file created successfully
+2025-08-06T17:13:19.759Z - POST /api/tiktok
+TikTok yt-dlp error: /Users/username/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+2025-08-06T17:13:24.019Z - POST /api/twitter
+Twitter: Processing URL: https://twitter.com/_allanguo/status/1945185671054024828
+2025-08-06T17:22:08.440Z - POST /api/spotify
+Spotify: Processing URL: https://open.spotify.com/track/64MgjDp6ijaLvS3T83JHX9?si=0a914a2f909a4375
+Spotify spotdl stdout: Processing query:                                                               
+https://open.spotify.com/track/64MgjDp6ijaLvS3T83JHX9?si=0a914a2f909a4375       
+AudioProviderError: YT-DLP download error -                                     
+https://music.youtube.com/watch?v=QP2bgZOCDlc                                   
+
+
+Spotify spotdl stderr: /Users/username/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+Spotify spotdl exit code: 0
+2025-08-06T17:24:05.986Z - POST /api/spotify
+Spotify: Processing URL: https://open.spotify.com/track/7uKqnK0Fe6mWIDocv4YhOw?si=00423c28cb73407b
+Spotify spotdl stdout: Processing query:                                                               
+https://open.spotify.com/track/7uKqnK0Fe6mWIDocv4YhOw?si=00423c28cb73407b       
+AudioProviderError: YT-DLP download error -                                     
+https://music.youtube.com/watch?v=6iZfvs3Zn44                                   
+
+
+Spotify spotdl stderr: /Users/username/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+Spotify spotdl exit code: 0
+2025-08-06T17:55:47.750Z - POST /api/spotify
+Spotify: Processing URL: https://open.spotify.com/episode/7DNg1RWqkPEvwYpuu03siO?si=5IGcBoWYQwiZH37Zg_IYGw
+Spotify spotdl stdout: Processing query:                                                               
+https://open.spotify.com/episode/7DNg1RWqkPEvwYpuu03siO?si=5IGcBoWYQwiZH37Zg_IYG
+w                                                                               
+
+An error occurred                                                               
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /Users/username/Library/Python/3.9/lib/python/site-packages/spotdl/console/e │
+│ ntry_point.py:160 in entry_point                                             │
+│                                                                              │
+│   157 │   try:                                                               │
+│   158 │   │   # Pick the operation to perform                                │
+│   159 │   │   # based on the name and run it!                                │
+│ ❱ 160 │   │   OPERATIONS[arguments.operation](                               │
+│   161 │   │   │   query=arguments.query,                                     │
+│   162 │   │   │   downloader=downloader,                                     │
+│   163 │   │   )                                                              │
+│                                                                              │
+│ /Users/username/Library/Python/3.9/lib/python/site-packages/spotdl/console/d │
+│ ownload.py:25 in download                                                    │
+│                                                                              │
+│   22 │   """                                                                 │
+│   23 │                                                                       │
+│   24 │   # Parse the query                                                   │
+│ ❱ 25 │   songs = get_simple_songs(                                           │
+│   26 │   │   query,                                                          │
+│   27 │   │   use_ytm_data=downloader.settings["ytm_data"],                   │
+│   28 │   │   playlist_numbering=downloader.settings["playlist_numbering"],   │
+│                                                                              │
+│ /Users/username/Library/Python/3.9/lib/python/site-packages/spotdl/utils/sea │
+│ rch.py:293 in get_simple_songs                                               │
+│                                                                              │
+│   290 │   │   │   │   │   # Append to songs                                  │
+│   291 │   │   │   │   │   songs.append(Song.from_dict(track))                │
+│   292 │   │   else:                                                          │
+│ ❱ 293 │   │   │   songs.append(Song.from_search_term(request))               │
+│   294 │                                                                      │
+│   295 │   for song_list in lists:                                            │
+│   296 │   │   logger.info(                                                   │
+│                                                                              │
+│ /Users/username/Library/Python/3.9/lib/python/site-packages/spotdl/types/son │
+│ g.py:174 in from_search_term                                                 │
+│                                                                              │
+│   171 │   │   raw_search_results = Song.search(search_term)                  │
+│   172 │   │                                                                  │
+│   173 │   │   if len(raw_search_results["tracks"]["items"]) == 0:            │
+│ ❱ 174 │   │   │   raise SongError(f"No results found for: {search_term}")    │
+│   175 │   │                                                                  │
+│   176 │   │   return Song.from_url(                                          │
+│   177 │   │   │   "http://open.spotify.com/track/"                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+SongError: No results found for:                                                
+https://open.spotify.com/episode/7DNg1RWqkPEvwYpuu03siO?si=5IGcBoWYQwiZH37Zg_IYG
+w                                                                               
+
+Spotify spotdl stderr: /Users/username/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+Spotify spotdl exit code: 1
+Spotify spotdl error: /Users/username/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+

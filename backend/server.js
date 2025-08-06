@@ -22,6 +22,134 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Spotify download endpoint - using yt-dlp
+app.post('/api/spotify', async (req, res) => {
+  try {
+    const { url, format = 'audio' } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+
+    console.log('Spotify: Processing URL:', url);
+    
+    // First, get content info
+    const infoProcess = spawn('python3', ['-m', 'yt_dlp',
+      '--print', '%(title)s|%(duration)s|%(uploader)s|%(album)s|%(artist)s',
+      '--no-warnings',
+      url
+    ]);
+
+    let contentInfo = '';
+    let infoError = '';
+
+    infoProcess.stdout.on('data', (data) => {
+      contentInfo += data.toString();
+    });
+
+    infoProcess.stderr.on('data', (data) => {
+      infoError += data.toString();
+    });
+
+    await new Promise((resolve) => {
+      infoProcess.on('close', resolve);
+    });
+
+    const [title, duration, uploader, album, artist] = contentInfo.trim().split('|');
+    
+    // Generate filename
+    const safeTitle = (title || 'Spotify_Content').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    const timestamp = Date.now();
+    const extension = 'm4a';
+    const filename = `${safeTitle}_${timestamp}.${extension}`;
+    const outputPath = path.join(__dirname, 'downloads', filename);
+
+    // Ensure downloads directory exists
+    const downloadsDir = path.join(__dirname, 'downloads');
+    if (!await fs.access(downloadsDir).then(() => true).catch(() => false)) {
+      await fs.mkdir(downloadsDir, { recursive: true });
+    }
+
+    // Download audio with spotdl (better for Spotify)
+    const spotdl = spawn('python3', ['-m', 'spotdl',
+      url,
+      '--output', path.dirname(outputPath),
+      '--format', 'mp3'
+    ]);
+
+    let spotdlOutput = '';
+    let errorOutput = '';
+
+    spotdl.stdout.on('data', (data) => {
+      spotdlOutput += data.toString();
+    });
+
+    spotdl.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+
+    spotdl.on('close', async (code) => {
+      console.log('Spotify spotdl stdout:', spotdlOutput);
+      console.log('Spotify spotdl stderr:', errorOutput);
+      console.log('Spotify spotdl exit code:', code);
+      
+      if (code === 0) {
+        try {
+          // spotdl creates files with its own naming convention
+          // Look for any newly created mp3 files in the downloads directory
+          const files = await fs.readdir(path.dirname(outputPath));
+          const mp3Files = files.filter(f => f.endsWith('.mp3'));
+          
+          if (mp3Files.length > 0) {
+            // Get the most recently created mp3 file
+            const newestFile = mp3Files[mp3Files.length - 1];
+            const actualFilePath = path.join(path.dirname(outputPath), newestFile);
+            const stats = await fs.stat(actualFilePath);
+            
+            res.json({
+              success: true,
+              filePath: actualFilePath,
+              filename: newestFile,
+              fileSize: stats.size,
+              platform: 'spotify',
+              title: title || 'Spotify Content',
+              duration: duration ? parseInt(duration) : undefined,
+              artist: artist || uploader || undefined,
+              album: album || undefined,
+              contentType: 'audio'
+            });
+          } else {
+            res.status(500).json({ 
+              error: 'No mp3 file was created',
+              details: 'spotdl completed but no audio file found'
+            });
+          }
+        } catch (fileError) {
+          console.error('Spotify file check error:', fileError);
+          res.status(500).json({ 
+            error: 'File was not created successfully',
+            details: fileError.message
+          });
+        }
+      } else {
+        console.error('Spotify spotdl error:', errorOutput);
+        res.status(500).json({ 
+          error: 'Spotify download failed',
+          details: errorOutput,
+          suggestions: 'Spotify may require premium account or the content may not be accessible'
+        });
+      }
+    });
+
+  } catch (error) {
+    console.error('Spotify download error:', error);
+    res.status(500).json({ 
+      error: 'Failed to process Spotify URL',
+      details: error.message 
+    });
+  }
+});
+
 // Serve downloaded files
 app.get('/api/file/:filename', (req, res) => {
   const filename = req.params.filename;
@@ -92,7 +220,7 @@ app.post('/api/youtube-ytdlp', async (req, res) => {
     }
 
     // First, get video info (title, duration, etc.)
-    const infoProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const infoProcess = spawn('python3', ['-m', 'yt_dlp',
       '--print', '%(title)s|%(duration)s|%(uploader)s|%(view_count)s',
       url
     ]);
@@ -119,7 +247,7 @@ app.post('/api/youtube-ytdlp', async (req, res) => {
       ? 'best[height<=720][ext=mp4]/best[ext=mp4]/best'
       : 'bestaudio[ext=m4a]/bestaudio';
 
-    const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const ytdlp = spawn('python3', ['-m', 'yt_dlp',
       '--get-url',
       '--format', formatString,
       url
@@ -178,7 +306,7 @@ app.post('/api/instagram', async (req, res) => {
     console.log('Instagram: Processing URL:', url);
     
     // First, get content info (title, duration, etc.)
-    const infoProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const infoProcess = spawn('python3', ['-m', 'yt_dlp',
       '--print', '%(title)s|%(duration)s|%(uploader)s|%(view_count)s|%(webpage_url)s',
       '--no-warnings',
       '--extractor-args', 'instagram:api_key=',
@@ -237,7 +365,7 @@ app.post('/api/instagram', async (req, res) => {
     }
 
     console.log('Instagram: Starting download with format:', formatString);
-    const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const ytdlp = spawn('python3', ['-m', 'yt_dlp',
       '--output', outputPath,
       '--format', formatString,
       '--no-warnings',
@@ -332,7 +460,7 @@ app.post('/api/tiktok', async (req, res) => {
     }
 
     // First, get content info and detect if it's a slideshow
-    const infoProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const infoProcess = spawn('python3', ['-m', 'yt_dlp',
       '--print', '%(title)s|%(duration)s|%(uploader)s|%(view_count)s|%(format_note)s',
       url
     ]);
@@ -380,7 +508,7 @@ app.post('/api/tiktok', async (req, res) => {
     }
 
     // Download file directly with yt-dlp - use working format strings
-    const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const ytdlp = spawn('python3', ['-m', 'yt_dlp',
       '--output', outputPath,
       '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15',
       '--add-header', 'Accept-Language:en-US,en;q=0.9',
@@ -458,7 +586,7 @@ app.post('/api/twitter', async (req, res) => {
     console.log('Twitter: Processing URL:', normalizedUrl);
     
     // First, get content info
-    const infoProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const infoProcess = spawn('python3', ['-m', 'yt_dlp',
       '--print', '%(title)s|%(duration)s|%(uploader)s|%(view_count)s',
       '--no-warnings',
       normalizedUrl
@@ -530,7 +658,7 @@ app.post('/api/twitter', async (req, res) => {
       // Download video/audio with yt-dlp
       const formatString = format === 'video' ? 'best[ext=mp4]/best' : 'bestaudio/best';
       
-      const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+      const ytdlp = spawn('python3', ['-m', 'yt_dlp',
         '--output', outputPath,
         '--format', formatString,
         '--no-warnings',
@@ -622,7 +750,7 @@ app.post('/api/podcast', async (req, res) => {
     console.log('Podcast: Processing URL:', url);
     
     // First, get content info
-    const infoProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const infoProcess = spawn('python3', ['-m', 'yt_dlp',
       '--print', '%(title)s|%(uploader)s|%(description)s|%(duration)s',
       '--no-warnings',
       url
@@ -666,7 +794,7 @@ app.post('/api/podcast', async (req, res) => {
       console.log('Apple Podcasts detected, requesting M4A format for better React Native compatibility');
     }
     
-    const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const ytdlp = spawn('python3', ['-m', 'yt_dlp',
       '--output', outputPath,
       '--format', formatString,
       '--no-warnings',
@@ -744,10 +872,11 @@ app.post('/api/facebook', async (req, res) => {
 
     console.log('Facebook: Processing URL:', url);
     
-    // First, get content info
-    const infoProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
-      '--print', '%(title)s|%(duration)s|%(uploader)s|%(view_count)s',
+    // First, get content info using dump-json (more reliable for Facebook)
+    const infoProcess = spawn('python3', ['-m', 'yt_dlp',
+      '--dump-json',
       '--no-warnings',
+      '--no-playlist',
       url
     ]);
 
@@ -766,10 +895,37 @@ app.post('/api/facebook', async (req, res) => {
       infoProcess.on('close', resolve);
     });
 
-    const [title, duration, uploader, viewCount] = contentInfo.trim().split('|');
+    let title, duration, uploader, viewCount;
+    try {
+      console.log('Facebook raw contentInfo:', contentInfo.substring(0, 200) + '...');
+      const jsonData = JSON.parse(contentInfo.trim());
+      title = jsonData.title;
+      duration = jsonData.duration;
+      uploader = jsonData.uploader;
+      viewCount = jsonData.view_count;
+      console.log('Facebook parsed:', { title: title?.substring(0, 50), duration, uploader: uploader?.substring(0, 20), hasVideo: duration > 0 });
+    } catch (parseError) {
+      console.error('Facebook JSON parse error:', parseError.message);
+      console.error('Raw content length:', contentInfo.length);
+      
+      // For Facebook video URLs, assume it's a video even if parsing fails
+      if (url.includes('/videos/')) {
+        title = 'Facebook Video';
+        duration = 30; // Assume video has content
+        uploader = 'Facebook User';
+        viewCount = null;
+        console.log('Facebook: Assuming video content for /videos/ URL');
+      } else {
+        // Fallback to basic info
+        title = 'Facebook Content';
+        duration = null;
+        uploader = 'Unknown';
+        viewCount = null;
+      }
+    }
     
     // Detect if this is a post with or without video content
-    const hasVideo = duration && duration !== 'null' && parseInt(duration) > 0;
+    const hasVideo = duration && duration !== 'null' && parseFloat(duration) > 0;
     
     // Generate filename
     const safeTitle = (title || 'Facebook_Content').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
@@ -801,7 +957,16 @@ app.post('/api/facebook', async (req, res) => {
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>');
     
-    const postInfo = `Facebook Post: ${decodedTitle}\nUploader: ${uploader || 'Unknown'}\nURL: ${url}\nDownloaded: ${new Date().toISOString()}`;
+    // Extract better content info from JSON
+    let description = '';
+    try {
+      const jsonData = JSON.parse(contentInfo.trim());
+      description = jsonData.description || '';
+    } catch (e) {
+      // Ignore parsing errors
+    }
+
+    const postInfo = `Facebook Post: ${decodedTitle}\nUploader: ${uploader || 'Unknown'}\nDuration: ${duration ? `${duration} seconds` : 'N/A'}\nView Count: ${viewCount || 'Unknown'}\nDescription: ${description || 'No description available'}\nURL: ${url}\nDownloaded: ${new Date().toISOString()}`;
     
     const textFilename = `${safeTitle}_${timestamp}_text.txt`;
     const textOutputPath = path.join(__dirname, 'downloads', textFilename);
@@ -817,7 +982,7 @@ app.post('/api/facebook', async (req, res) => {
       const formatString = format === 'video' ? 'best[ext=mp4]/best' : 'bestaudio/best';
       
       console.log('Facebook: Starting download with format:', formatString);
-      const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+      const ytdlp = spawn('python3', ['-m', 'yt_dlp',
         '--output', outputPath,
         '--format', formatString,
         '--no-warnings',
@@ -936,7 +1101,7 @@ app.post('/api/linkedin', async (req, res) => {
     console.log('LinkedIn: Processing URL:', url);
     
     // First, get content info - try to get description/content as well
-    const infoProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const infoProcess = spawn('python3', ['-m', 'yt_dlp',
       '--print', '%(title)s|%(duration)s|%(uploader)s|%(view_count)s|%(description)s',
       '--no-warnings',
       url
@@ -1024,7 +1189,7 @@ app.post('/api/linkedin', async (req, res) => {
       const formatString = format === 'video' ? 'best[ext=mp4]/best' : 'bestaudio/best';
       
       console.log('LinkedIn: Starting video download with format:', formatString);
-      const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+      const ytdlp = spawn('python3', ['-m', 'yt_dlp',
         '--output', outputPath,
         '--format', formatString,
         '--no-warnings',
@@ -1123,7 +1288,7 @@ app.post('/api/download', async (req, res) => {
     }
 
     // Use yt-dlp for generic downloads
-    const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+    const ytdlp = spawn('python3', ['-m', 'yt_dlp',
       '--get-url',
       '--format', 'best',
       url
@@ -1174,24 +1339,537 @@ app.use((error, req, res, next) => {
   });
 });
 
-// 404 handler
+// YouTube Music download endpoint
+app.post('/api/youtube-music', async (req, res) => {
+  try {
+    const { url, format = 'audio' } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+
+    console.log('YouTube Music: Processing URL:', url);
+    
+    // Use yt-dlp for YouTube Music with audio-focused options
+    const timestamp = Date.now();
+    const outputPath = path.join(__dirname, 'downloads', `ytmusic_${timestamp}.%(ext)s`);
+    
+    const ytdlpProcess = spawn('python3', ['-m', 'yt_dlp',
+      '--extract-flat', 'false',
+      '--format', 'bestaudio/best',
+      '--output', outputPath,
+      '--no-warnings',
+      '--print-json',
+      url
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    ytdlpProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    ytdlpProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ytdlpProcess.on('close', async (code) => {
+      console.log(`YouTube Music yt-dlp exit code: ${code}`);
+      console.log('YouTube Music stdout:', stdout);
+      if (stderr) console.log('YouTube Music stderr:', stderr);
+
+      if (code === 0) {
+        try {
+          // Parse the JSON output to get metadata
+          const lines = stdout.trim().split('\n');
+          let metadata = null;
+          
+          for (const line of lines) {
+            try {
+              const json = JSON.parse(line);
+              if (json.title && json.url) {
+                metadata = json;
+                break;
+              }
+            } catch (e) {
+              // Continue to next line
+            }
+          }
+
+          if (!metadata) {
+            throw new Error('No metadata found in output');
+          }
+
+          // Find the downloaded file
+          const downloadsDir = path.join(__dirname, 'downloads');
+          const files = await fs.readdir(downloadsDir);
+          const musicFiles = files.filter(f => f.includes(`ytmusic_${timestamp}`));
+          
+          if (musicFiles.length === 0) {
+            throw new Error('No music file was downloaded');
+          }
+
+          const downloadedFile = musicFiles[0];
+          const filePath = path.join(downloadsDir, downloadedFile);
+          const stats = await fs.stat(filePath);
+
+          // Create text file with track information
+          const textFilename = downloadedFile.replace(/\.[^/.]+$/, '_track_info.txt');
+          const textPath = path.join(downloadsDir, textFilename);
+          
+          const trackInfo = `YouTube Music Track: ${metadata.title || 'Unknown Track'}
+Artist: ${metadata.artist || metadata.uploader || 'Unknown Artist'}
+Album: ${metadata.album || 'Unknown Album'}
+Duration: ${metadata.duration ? `${Math.floor(metadata.duration / 60)}:${String(metadata.duration % 60).padStart(2, '0')}` : 'Unknown'}
+View Count: ${metadata.view_count || 'Unknown'}
+Description: ${metadata.description || 'No description available'}
+Track URL: ${url}
+Downloaded: ${new Date().toISOString()}`;
+
+          await fs.writeFile(textPath, trackInfo, 'utf8');
+
+          res.json({
+            success: true,
+            filePath: filePath,
+            filename: downloadedFile,
+            fileSize: stats.size,
+            platform: 'youtube-music',
+            title: metadata.title || 'YouTube Music Track',
+            artist: metadata.artist || metadata.uploader || undefined,
+            album: metadata.album || undefined,
+            duration: metadata.duration || undefined,
+            viewCount: metadata.view_count || undefined,
+            contentType: 'audio',
+            trackInfo: textPath
+          });
+
+        } catch (fileError) {
+          console.error('YouTube Music file processing error:', fileError);
+          res.status(500).json({ 
+            error: 'YouTube Music download completed but file processing failed',
+            details: fileError.message,
+            suggestions: 'The track may have been downloaded but metadata extraction failed'
+          });
+        }
+      } else {
+        console.error('YouTube Music yt-dlp error:', stderr);
+        
+        let errorMessage = 'YouTube Music download failed';
+        let suggestions = 'Try with a different YouTube Music URL';
+        
+        if (stderr.includes('Video unavailable') || stderr.includes('not available')) {
+          errorMessage = 'YouTube Music track unavailable';
+          suggestions = 'This track may be region-restricted, private, or removed from YouTube Music.';
+        } else if (stderr.includes('403') || stderr.includes('Forbidden')) {
+          errorMessage = 'YouTube Music access denied';
+          suggestions = 'This track may be restricted or require authentication.';
+        } else if (stderr.includes('404') || stderr.includes('not found')) {
+          errorMessage = 'YouTube Music track not found';
+          suggestions = 'The track URL may be incorrect or the track may have been removed.';
+        }
+        
+        res.status(500).json({ 
+          error: errorMessage,
+          details: stderr,
+          suggestions: suggestions
+        });
+      }
+    });
+
+  } catch (error) {
+    console.error('YouTube Music processing error:', error);
+    res.status(500).json({ 
+      error: 'Failed to process YouTube Music URL',
+      details: error.message 
+    });
+  }
+});
+
+// Bulk Playlist download endpoint
+app.post('/api/playlist', async (req, res) => {
+  try {
+    const { url, format = 'auto', maxItems = 10 } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+
+    console.log(`Playlist: Processing URL: ${url} (max: ${maxItems} items)`);
+    
+    // Determine platform and set appropriate format
+    let platformFormat = 'best';
+    let platform = 'unknown';
+    let processedUrl = url;
+    
+    if (url.includes('youtube.com/playlist') || url.includes('youtu.be')) {
+      platform = 'youtube';
+      platformFormat = format === 'audio' ? 'bestaudio/best' : 'best[height<=720]/best';
+    } else if (url.includes('music.youtube.com')) {
+      platform = 'youtube-music';
+      platformFormat = 'bestaudio/best';
+    } else if (url.includes('podcasts.apple.com')) {
+      platform = 'apple-podcasts';
+      platformFormat = 'bestaudio/best';
+      // For Apple Podcasts, we need to extract RSS feed from the show page
+      // yt-dlp can handle this automatically for most podcast shows
+    } else if (url.includes('feeds.') || url.includes('.xml') || url.includes('rss')) {
+      platform = 'rss-feed';
+      platformFormat = 'bestaudio/best';
+    } else if (url.includes('spotify.com/playlist') || url.includes('spotify.com/album')) {
+      platform = 'spotify-playlist';
+      platformFormat = 'bestaudio/best';
+    }
+    
+    const timestamp = Date.now();
+    const outputTemplate = path.join(__dirname, 'downloads', `playlist_${platform}_${timestamp}`, '%(playlist_index)s - %(title)s.%(ext)s');
+    
+    // Create directory for playlist downloads
+    const playlistDir = path.join(__dirname, 'downloads', `playlist_${platform}_${timestamp}`);
+    await fs.mkdir(playlistDir, { recursive: true });
+    
+    let downloadProcess;
+    
+    if (platform === 'spotify-playlist') {
+      // Use spotdl for Spotify playlists
+      downloadProcess = spawn('python3', ['-m', 'spotdl',
+        url,
+        '--output', path.dirname(outputTemplate),
+        '--format', 'mp3',
+        '--playlist-end', maxItems.toString()
+      ]);
+    } else {
+      // Use yt-dlp for all other platforms
+      downloadProcess = spawn('python3', ['-m', 'yt_dlp',
+        '--extract-flat', 'false',
+        '--format', platformFormat,
+        '--output', outputTemplate,
+        '--playlist-end', maxItems.toString(),
+        '--no-warnings',
+        '--print-json',
+        '--write-info-json',
+        url
+      ]);
+    }
+
+    let stdout = '';
+    let stderr = '';
+    const downloadedItems = [];
+
+    downloadProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+      stdout += output;
+      
+      // Parse JSON output in real-time to track progress
+      const lines = output.trim().split('\n');
+      for (const line of lines) {
+        try {
+          const json = JSON.parse(line);
+          if (json.title && json.filename) {
+            downloadedItems.push({
+              title: json.title,
+              filename: path.basename(json.filename),
+              duration: json.duration,
+              uploader: json.uploader || json.channel,
+              index: json.playlist_index
+            });
+          }
+        } catch (e) {
+          // Continue to next line
+        }
+      }
+    });
+
+    downloadProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    downloadProcess.on('close', async (code) => {
+      console.log(`Playlist download exit code: ${code}`);
+      console.log(`Playlist download completed. Items found: ${downloadedItems.length}`);
+      if (stderr) console.log('Playlist stderr:', stderr);
+
+      if (code === 0) {
+        try {
+          // Get actual downloaded files
+          const files = await fs.readdir(playlistDir);
+          const mediaFiles = files.filter(f => !f.endsWith('.info.json') && !f.endsWith('.description'));
+          
+          if (mediaFiles.length === 0) {
+            throw new Error('No files were downloaded from the playlist');
+          }
+
+          // Calculate total size
+          let totalSize = 0;
+          for (const file of mediaFiles) {
+            const filePath = path.join(playlistDir, file);
+            const stats = await fs.stat(filePath);
+            totalSize += stats.size;
+          }
+
+          // Create playlist summary file
+          const summaryFilename = `playlist_summary_${timestamp}.txt`;
+          const summaryPath = path.join(playlistDir, summaryFilename);
+          
+          const playlistInfo = `Playlist Download Summary
+Platform: ${platform.toUpperCase()}
+Source URL: ${url}
+Total Items Downloaded: ${mediaFiles.length}
+Total Size: ${(totalSize / (1024 * 1024)).toFixed(2)} MB
+Downloaded: ${new Date().toISOString()}
+
+Items:
+${downloadedItems.map((item, i) => 
+  `${i + 1}. ${item.title} (${item.duration ? Math.floor(item.duration / 60) + ':' + String(item.duration % 60).padStart(2, '0') : 'Unknown duration'})`
+).join('\n')}`;
+
+          await fs.writeFile(summaryPath, playlistInfo, 'utf8');
+
+          res.json({
+            success: true,
+            playlistPath: playlistDir,
+            platform: platform,
+            totalItems: mediaFiles.length,
+            totalSize: totalSize,
+            downloadedFiles: mediaFiles,
+            items: downloadedItems,
+            summaryFile: summaryPath,
+            contentType: format === 'audio' ? 'audio' : 'mixed'
+          });
+
+        } catch (fileError) {
+          console.error('Playlist file processing error:', fileError);
+          res.status(500).json({ 
+            error: 'Playlist download completed but file processing failed',
+            details: fileError.message,
+            suggestions: 'Some files may have been downloaded but processing failed'
+          });
+        }
+      } else {
+        console.error('Playlist yt-dlp error:', stderr);
+        
+        let errorMessage = 'Playlist download failed';
+        let suggestions = 'Try with a different playlist URL or reduce maxItems';
+        
+        if (stderr.includes('Playlist does not exist') || stderr.includes('not found')) {
+          errorMessage = 'Playlist not found';
+          suggestions = 'The playlist may be private, deleted, or the URL is incorrect.';
+        } else if (stderr.includes('private') || stderr.includes('403')) {
+          errorMessage = 'Playlist is private or restricted';
+          suggestions = 'This playlist may require authentication or be unavailable in your region.';
+        } else if (stderr.includes('rate') || stderr.includes('limit')) {
+          errorMessage = 'Rate limit reached';
+          suggestions = 'Please wait before downloading large playlists. Try reducing maxItems.';
+        }
+        
+        res.status(500).json({ 
+          error: errorMessage,
+          details: stderr,
+          suggestions: suggestions
+        });
+      }
+    });
+
+  } catch (error) {
+    console.error('Playlist processing error:', error);
+    res.status(500).json({ 
+      error: 'Failed to process playlist URL',
+      details: error.message 
+    });
+  }
+});
+
+// RSS/Podcast feed download endpoint
+app.post('/api/podcast', async (req, res) => {
+  try {
+    const { url, format = 'audio' } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+
+    console.log('Podcast: Processing RSS/Podcast URL:', url);
+    
+    // Use yt-dlp to extract podcast episodes from RSS feeds or podcast URLs
+    const timestamp = Date.now();
+    const outputPath = path.join(__dirname, 'downloads', `podcast_${timestamp}.%(ext)s`);
+    
+    const ytdlpProcess = spawn('python3', ['-m', 'yt_dlp',
+      '--extract-flat', 'false',
+      '--format', 'bestaudio/best',
+      '--output', outputPath,
+      '--no-warnings',
+      '--print-json',
+      url
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    ytdlpProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    ytdlpProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ytdlpProcess.on('close', async (code) => {
+      console.log(`Podcast yt-dlp exit code: ${code}`);
+      console.log('Podcast stdout:', stdout);
+      if (stderr) console.log('Podcast stderr:', stderr);
+
+      if (code === 0) {
+        try {
+          // Parse the JSON output to get metadata
+          const lines = stdout.trim().split('\n');
+          let metadata = null;
+          
+          for (const line of lines) {
+            try {
+              const json = JSON.parse(line);
+              if (json.title && json.url) {
+                metadata = json;
+                break;
+              }
+            } catch (e) {
+              // Continue to next line
+            }
+          }
+
+          if (!metadata) {
+            throw new Error('No metadata found in output');
+          }
+
+          // Find the downloaded file
+          const downloadsDir = path.join(__dirname, 'downloads');
+          const files = await fs.readdir(downloadsDir);
+          const podcastFiles = files.filter(f => f.includes(`podcast_${timestamp}`));
+          
+          if (podcastFiles.length === 0) {
+            throw new Error('No podcast file was downloaded');
+          }
+
+          const downloadedFile = podcastFiles[0];
+          const filePath = path.join(downloadsDir, downloadedFile);
+          const stats = await fs.stat(filePath);
+
+          // Create text file with episode information
+          const textFilename = downloadedFile.replace(/\.[^/.]+$/, '_episode_info.txt');
+          const textPath = path.join(downloadsDir, textFilename);
+          
+          const episodeInfo = `Podcast Episode: ${metadata.title || 'Unknown Episode'}
+Uploader: ${metadata.uploader || metadata.channel || 'Unknown'}
+Duration: ${metadata.duration ? `${Math.floor(metadata.duration / 60)}:${String(metadata.duration % 60).padStart(2, '0')}` : 'Unknown'}
+Description: ${metadata.description || 'No description available'}
+Episode URL: ${url}
+Downloaded: ${new Date().toISOString()}`;
+
+          await fs.writeFile(textPath, episodeInfo, 'utf8');
+
+          res.json({
+            success: true,
+            filePath: filePath,
+            filename: downloadedFile,
+            fileSize: stats.size,
+            platform: 'podcast',
+            title: metadata.title || 'Podcast Episode',
+            duration: metadata.duration || undefined,
+            uploader: metadata.uploader || metadata.channel || undefined,
+            contentType: 'audio',
+            episodeInfo: textPath
+          });
+
+        } catch (fileError) {
+          console.error('Podcast file processing error:', fileError);
+          res.status(500).json({ 
+            error: 'Podcast download completed but file processing failed',
+            details: fileError.message,
+            suggestions: 'The podcast may have been downloaded but metadata extraction failed'
+          });
+        }
+      } else {
+        console.error('Podcast yt-dlp error:', stderr);
+        
+        let errorMessage = 'Podcast download failed';
+        let suggestions = 'Try with a different podcast URL or RSS feed';
+        
+        if (stderr.includes('unsupported URL') || stderr.includes('No suitable extractor')) {
+          errorMessage = 'Unsupported podcast URL format';
+          suggestions = 'Try with a direct RSS feed URL or supported podcast platform URL';
+        } else if (stderr.includes('403') || stderr.includes('Forbidden')) {
+          errorMessage = 'Podcast access denied';
+          suggestions = 'This podcast may be private or restricted. Try a different public podcast.';
+        } else if (stderr.includes('404') || stderr.includes('not found')) {
+          errorMessage = 'Podcast not found';
+          suggestions = 'The podcast URL may be incorrect or the episode may have been removed.';
+        }
+        
+        res.status(500).json({ 
+          error: errorMessage,
+          details: stderr,
+          suggestions: suggestions
+        });
+      }
+    });
+
+  } catch (error) {
+    console.error('Podcast processing error:', error);
+    res.status(500).json({ 
+      error: 'Failed to process podcast URL',
+      details: error.message 
+    });
+  }
+});
+
+// 404 handler - must be last
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Social Media Downloader Backend running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
   console.log('Available endpoints:');
+  console.log('  POST /api/spotify - Download Spotify tracks/podcasts');
   console.log('  POST /api/youtube - Download YouTube videos');
   console.log('  POST /api/youtube-ytdlp - Download YouTube videos using yt-dlp');
+  console.log('  POST /api/youtube-music - Download YouTube Music tracks');
   console.log('  POST /api/instagram - Download Instagram content');
   console.log('  POST /api/tiktok - Download TikTok videos');
   console.log('  POST /api/twitter - Download Twitter/X videos and posts');
-  console.log('  POST /api/podcast - Download podcast episodes from RSS feeds');
   console.log('  POST /api/facebook - Download Facebook videos');
   console.log('  POST /api/linkedin - Download LinkedIn videos and posts');
-  console.log('  POST /api/download - Generic download endpoint');
+  console.log('  POST /api/podcast - Download RSS podcast feeds/episodes');
+  console.log('  POST /api/playlist - Download bulk playlists/shows (YouTube, YouTube Music, Apple Podcasts, Spotify)');
+});
+
+// Graceful shutdown handling
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use. Try:`);
+    console.error(`  1. Kill existing process: lsof -ti:${PORT} | xargs kill -9`);
+    console.error(`  2. Use different port: PORT=3004 npm run dev`);
+    process.exit(1);
+  } else {
+    console.error('Server error:', err);
+  }
+});
+
+process.on('SIGINT', () => {
+  console.log('\nShutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed.');
+    process.exit(0);
+  });
+});
+
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM, shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed.');
+    process.exit(0);
+  });
 });
 
 module.exports = app;
