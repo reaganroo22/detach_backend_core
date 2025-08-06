@@ -190,7 +190,7 @@ export default function LibraryTab() {
                   styles.filterButton,
                   filter === filterOption.key && styles.filterButtonActive,
                 ]}
-                onPress={() => setFilter(filterOption.key as any)}
+                onPress={() => setFilter(filterOption.key as 'all' | 'completed' | 'downloading' | 'pending' | 'failed')}
               >
                 <Text
                   style={[

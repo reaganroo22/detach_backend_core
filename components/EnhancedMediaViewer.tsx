@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Video } from 'expo-av';
 import { Audio } from 'expo-av';
+import { useAudioPlayer, AudioSource } from 'expo-audio';
 import { 
   X, 
   Play, 
@@ -151,6 +152,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
           break;
         case 'image':
           setImageUri(item.filePath);
+          setIsLoading(false);
           break;
         case 'text':
           await loadText();
@@ -170,24 +172,67 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
         await sound.unloadAsync();
       }
 
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: item.filePath! },
-        { shouldPlay: false, isLooping: false, rate: playbackRate }
-      );
+      console.log('Loading audio from path:', item.filePath);
+      
+      // Check if file exists
+      const fileInfo = await FileSystem.getInfoAsync(item.filePath!);
+      console.log('Audio file info:', fileInfo);
+      
+      if (!fileInfo.exists) {
+        throw new Error('Audio file does not exist');
+      }
 
-      setSound(newSound);
+      // Simple approach - just create the audio with a short timeout and show the UI
+      console.log('Creating audio sound...');
+      
+      try {
+        // Try to create the audio with a 3-second timeout
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Audio creation timeout')), 3000);
+        });
+        
+        const audioPromise = Audio.Sound.createAsync(
+          { uri: item.filePath! },
+          { shouldPlay: false, isLooping: false }
+        );
 
-      newSound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.isLoaded) {
-          setDuration(status.durationMillis || 0);
-          setPosition(status.positionMillis || 0);
-          setIsPlaying(status.isPlaying || false);
+        const result = await Promise.race([audioPromise, timeoutPromise]) as { sound: Audio.Sound };
+        const { sound: newSound } = result;
+
+        console.log('Audio created successfully');
+        setSound(newSound);
+
+        newSound.setOnPlaybackStatusUpdate((status: any) => {
+          if (status.isLoaded) {
+            setDuration(status.durationMillis || 0);
+            setPosition(status.positionMillis || 0);
+            setIsPlaying(status.isPlaying || false);
+          }
+        });
+
+        // Try to get initial status
+        try {
+          const initialStatus = await newSound.getStatusAsync();
+          if (initialStatus.isLoaded) {
+            setDuration(initialStatus.durationMillis || 0);
+          }
+        } catch (statusError) {
+          console.warn('Could not get initial status, but continuing anyway');
         }
-      });
+
+      } catch (audioError) {
+        console.warn('Audio creation failed, showing basic player UI anyway:', audioError);
+        // Still show the player UI even if audio creation fails
+        setSound(null);
+        setDuration(0);
+      }
 
     } catch (error) {
       console.error('Error loading audio:', error);
-      Alert.alert('Error', 'Failed to load audio file');
+      setSound(null);
+      setDuration(0);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -198,6 +243,8 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     } catch (error) {
       console.error('Error loading text:', error);
       setTextContent('Error loading text content');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -362,7 +409,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
         <>
           <Text style={styles.mediaTitle}>{getSafeTitle()}</Text>
           <Text style={styles.mediaSubtitle}>
-            {getSafePlatformName() + ' • Video'}
+            {`${getSafePlatformName()} • Video`}
           </Text>
         </>
       )}
@@ -483,52 +530,72 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     <View style={styles.audioContainer}>
       <Text style={styles.mediaTitle}>{getSafeTitle()}</Text>
       <Text style={styles.mediaSubtitle}>
-        {getSafePlatformName() + ' • Audio'}
+        {`${getSafePlatformName()} • Audio`}
       </Text>
       
-      <View style={styles.progressContainer}>
-        <View style={styles.progressBar}>
-          <View 
-            style={[
-              styles.progressFill, 
-              { width: duration > 0 ? `${Math.min((position / duration) * 100, 100)}%` : '0%' }
-            ]} 
-          />
+      {!sound && (
+        <View style={styles.audioErrorContainer}>
+          <Text style={styles.audioErrorText}>⚠️ Audio Loading Issue</Text>
+          <Text style={styles.audioErrorDescription}>
+            This audio file downloaded successfully but React Native has trouble loading it. 
+            The file is saved to your device storage.
+          </Text>
+          <TouchableOpacity 
+            style={styles.showFileButton}
+            onPress={() => Alert.alert('File Location', item.filePath || 'File path not available')}
+          >
+            <Text style={styles.showFileButtonText}>Show File Path</Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.timeContainer}>
-          <Text style={styles.timeText}>{formatTime(position)}</Text>
-          <Text style={styles.timeText}>{formatTime(duration)}</Text>
-        </View>
-      </View>
+      )}
+      
+      {sound && (
+        <>
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+              <View 
+                style={[
+                  styles.progressFill, 
+                  { width: duration > 0 ? `${Math.min((position / duration) * 100, 100)}%` : '0%' }
+                ]} 
+              />
+            </View>
+            <View style={styles.timeContainer}>
+              <Text style={styles.timeText}>{formatTime(position)}</Text>
+              <Text style={styles.timeText}>{formatTime(duration)}</Text>
+            </View>
+          </View>
 
-      <View style={styles.audioControls}>
-        <TouchableOpacity 
-          style={styles.controlButton} 
-          onPress={() => seekAudio(Math.max(0, position - 10000))}
-        >
-          <SkipBack size={20} color="#92400e" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.controlButton} onPress={toggleAudioMute}>
-          {isMuted ? <VolumeX size={20} color="#92400e" /> : <Volume2 size={20} color="#92400e" />}
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.playButton} onPress={toggleAudioPlayback}>
-          {isPlaying ? <Pause size={32} color="#ffffff" /> : <Play size={32} color="#ffffff" />}
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.controlButton} onPress={handlePlaybackRatePress}>
-          <Gauge size={20} color="#92400e" />
-          <Text style={styles.audioRateText}>{playbackRate}x</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.controlButton} 
-          onPress={() => seekAudio(Math.min(duration, position + 10000))}
-        >
-          <SkipForward size={20} color="#92400e" />
-        </TouchableOpacity>
-      </View>
+          <View style={styles.audioControls}>
+            <TouchableOpacity 
+              style={styles.controlButton} 
+              onPress={() => seekAudio(Math.max(0, position - 10000))}
+            >
+              <SkipBack size={20} color="#92400e" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.controlButton} onPress={toggleAudioMute}>
+              {isMuted ? <VolumeX size={20} color="#92400e" /> : <Volume2 size={20} color="#92400e" />}
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.playButton} onPress={toggleAudioPlayback}>
+              {isPlaying ? <Pause size={32} color="#ffffff" /> : <Play size={32} color="#ffffff" />}
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.controlButton} onPress={handlePlaybackRatePress}>
+              <Gauge size={20} color="#92400e" />
+              <Text style={styles.audioRateText}>{playbackRate}x</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.controlButton} 
+              onPress={() => seekAudio(Math.min(duration, position + 10000))}
+            >
+              <SkipForward size={20} color="#92400e" />
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
     </View>
   );
 
@@ -536,7 +603,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     <View style={styles.imageContainer}>
       <Text style={styles.mediaTitle}>{getSafeTitle()}</Text>
       <Text style={styles.mediaSubtitle}>
-        {getSafePlatformName() + ' • Image'}
+        {`${getSafePlatformName()} • Image`}
       </Text>
       
       <ScrollView 
@@ -554,7 +621,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
             resizeMode="contain"
           />
         ) : (
-          <Text style={styles.errorText}>{'No image available'}</Text>
+          <Text style={styles.errorText}>No image available</Text>
         )}
       </ScrollView>
     </View>
@@ -564,11 +631,11 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     <View style={styles.textContainer}>
       <Text style={styles.mediaTitle}>{getSafeTitle()}</Text>
       <Text style={styles.mediaSubtitle}>
-        {getSafePlatformName() + ' • Text Content'}
+        {`${getSafePlatformName()} • Text Content`}
       </Text>
       
       <ScrollView style={styles.textScrollView} showsVerticalScrollIndicator={false}>
-        <Text style={styles.textContent}>{textContent || 'No content available'}</Text>
+        <Text style={styles.textContent}>{String(textContent || 'No content available')}</Text>
       </ScrollView>
     </View>
   );
@@ -577,7 +644,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     if (!item) {
       return (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{'No content available'}</Text>
+          <Text style={styles.errorText}>No content available</Text>
         </View>
       );
     }
@@ -585,7 +652,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     if (isLoading) {
       return (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{'Loading content...'}</Text>
+          <Text style={styles.errorText}>Loading content...</Text>
         </View>
       );
     }
@@ -602,7 +669,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
       default:
         return (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{'Unsupported content type'}</Text>
+            <Text style={styles.errorText}>Unsupported content type</Text>
           </View>
         );
     }
@@ -616,7 +683,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
         {!isFullscreen && (
           <View style={styles.header}>
             <View style={styles.headerLeft} />
-            <Text style={styles.headerTitle}>{'Media Viewer'}</Text>
+            <Text style={styles.headerTitle}>Media Viewer</Text>
             <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
               <X size={24} color="#92400e" />
             </TouchableOpacity>
@@ -873,6 +940,42 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: '#92400e',
     marginTop: 2,
+  },
+  audioErrorContainer: {
+    backgroundColor: '#fff3cd',
+    borderRadius: 8,
+    padding: 20,
+    margin: 20,
+    borderWidth: 2,
+    borderColor: '#ffc107',
+    alignItems: 'center',
+  },
+  audioErrorText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#856404',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  audioErrorDescription: {
+    fontSize: 14,
+    color: '#856404',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 15,
+  },
+  showFileButton: {
+    backgroundColor: '#ffc107',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#856404',
+  },
+  showFileButtonText: {
+    color: '#856404',
+    fontWeight: '600',
+    fontSize: 14,
   },
   
   // Image Viewer Styles

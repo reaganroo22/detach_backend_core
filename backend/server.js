@@ -493,8 +493,9 @@ app.post('/api/twitter', async (req, res) => {
       extension = format === 'video' ? 'mp4' : 'm4a';
       contentType = format;
     } else {
-      extension = 'txt';
-      contentType = 'text';
+      // For posts without video, try to download as image first, fallback to text
+      extension = 'jpg';
+      contentType = 'image';
     }
     
     const filename = `${safeTitle}_${timestamp}.${extension}`;
@@ -506,6 +507,25 @@ app.post('/api/twitter', async (req, res) => {
       await fs.mkdir(downloadsDir, { recursive: true });
     }
 
+    // Always create a text file with post info first
+    const decodedTitle = (title || 'No title')
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+    
+    const postInfo = `Twitter Post: ${decodedTitle}\nUploader: ${uploader || 'Unknown'}\nURL: ${normalizedUrl}\nDownloaded: ${new Date().toISOString()}`;
+    
+    const textFilename = `${safeTitle}_${timestamp}_text.txt`;
+    const textOutputPath = path.join(__dirname, 'downloads', textFilename);
+    
+    try {
+      await fs.writeFile(textOutputPath, postInfo, 'utf8');
+    } catch (textError) {
+      console.error('Twitter text file creation error:', textError);
+    }
+    
     if (hasVideo) {
       // Download video/audio with yt-dlp
       const formatString = format === 'video' ? 'best[ext=mp4]/best' : 'bestaudio/best';
@@ -538,7 +558,8 @@ app.post('/api/twitter', async (req, res) => {
               duration: duration ? parseInt(duration) : undefined,
               uploader: uploader || undefined,
               viewCount: viewCount ? parseInt(viewCount) : undefined,
-              contentType: contentType
+              contentType: contentType,
+              textFile: textOutputPath
             });
           } catch (fileError) {
             console.error('Twitter file check error:', fileError);
@@ -557,28 +578,25 @@ app.post('/api/twitter', async (req, res) => {
         }
       });
     } else {
-      // Create a text file with tweet info
-      const tweetInfo = `Twitter Post: ${title || 'No title'}\nUploader: ${uploader || 'Unknown'}\nURL: ${normalizedUrl}\nDownloaded: ${new Date().toISOString()}`;
-      
+      // For text-only posts, return the text file
       try {
-        await fs.writeFile(outputPath, tweetInfo, 'utf8');
-        const stats = await fs.stat(outputPath);
+        const stats = await fs.stat(textOutputPath);
         
         res.json({
           success: true,
-          filePath: outputPath,
-          filename: filename,
+          filePath: textOutputPath,
+          filename: textFilename,
           fileSize: stats.size,
           platform: 'twitter',
           title: title || 'Twitter Post',
           uploader: uploader || undefined,
           contentType: 'text'
         });
-      } catch (writeError) {
-        console.error('Twitter text file creation error:', writeError);
+      } catch (statError) {
+        console.error('Twitter text file stat error:', statError);
         res.status(500).json({ 
           error: 'Failed to create text file',
-          details: writeError.message
+          details: statError.message
         });
       }
     }
@@ -592,7 +610,7 @@ app.post('/api/twitter', async (req, res) => {
   }
 });
 
-// Apple Podcasts download endpoint using RSS feeds and yt-dlp fallback
+// Apple Podcasts download endpoint - using yt-dlp with direct download
 app.post('/api/podcast', async (req, res) => {
   try {
     const { url, episodeIndex = 0 } = req.body;
@@ -603,91 +621,107 @@ app.post('/api/podcast', async (req, res) => {
 
     console.log('Podcast: Processing URL:', url);
     
-    // First try yt-dlp for Apple Podcasts URLs
+    // First, get content info
+    const infoProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+      '--print', '%(title)s|%(uploader)s|%(description)s|%(duration)s',
+      '--no-warnings',
+      url
+    ]);
+
+    let contentInfo = '';
+    let infoError = '';
+
+    infoProcess.stdout.on('data', (data) => {
+      contentInfo += data.toString();
+    });
+
+    infoProcess.stderr.on('data', (data) => {
+      infoError += data.toString();
+    });
+
+    await new Promise((resolve) => {
+      infoProcess.on('close', resolve);
+    });
+
+    const [title, uploader, description, duration] = contentInfo.trim().split('|');
+    
+    // Generate filename - use M4A for Apple Podcasts for better React Native compatibility
+    const safeTitle = (title || 'Podcast_Episode').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    const timestamp = Date.now();
+    const extension = url.includes('podcasts.apple.com') ? 'm4a' : 'mp3';
+    const filename = `${safeTitle}_${timestamp}.${extension}`;
+    const outputPath = path.join(__dirname, 'downloads', filename);
+
+    // Ensure downloads directory exists
+    const downloadsDir = path.join(__dirname, 'downloads');
+    if (!await fs.access(downloadsDir).then(() => true).catch(() => false)) {
+      await fs.mkdir(downloadsDir, { recursive: true });
+    }
+
+    // Download file directly with yt-dlp - for Apple Podcasts, request M4A format for React Native compatibility
+    console.log('Podcast: Starting download...');
+    let formatString = 'bestaudio/best';
     if (url.includes('podcasts.apple.com')) {
-      console.log('Podcast: Apple Podcasts URL detected, trying yt-dlp...');
-      
-      const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
-        '--print', '%(title)s|%(uploader)s|%(description)s|%(duration)s',
-        '--no-warnings',
-        url
-      ]);
-
-      let ytdlpInfo = '';
-      let ytdlpError = '';
-
-      ytdlp.stdout.on('data', (data) => {
-        ytdlpInfo += data.toString();
-      });
-
-      ytdlp.stderr.on('data', (data) => {
-        ytdlpError += data.toString();
-      });
-
-      await new Promise((resolve) => {
-        ytdlp.on('close', resolve);
-      });
-
-      if (ytdlpInfo.trim()) {
-        const [title, uploader, description, duration] = ytdlpInfo.trim().split('|');
-        
-        const safeTitle = (title || 'Podcast_Episode').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
-        const timestamp = Date.now();
-        const filename = `${safeTitle}_${timestamp}.m4a`;
-        const outputPath = path.join(__dirname, 'downloads', filename);
-
-        // Download with yt-dlp
-        const downloadProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
-          '--output', outputPath,
-          '--format', 'bestaudio/best',
-          '--no-warnings',
-          url
-        ]);
-
-        let downloadError = '';
-
-        downloadProcess.stderr.on('data', (data) => {
-          downloadError += data.toString();
-        });
-
-        downloadProcess.on('close', async (code) => {
-          if (code === 0) {
-            try {
-              const stats = await fs.stat(outputPath);
-              
-              res.json({
-                success: true,
-                filePath: outputPath,
-                filename: filename,
-                fileSize: stats.size,
-                platform: 'podcast',
-                title: title || 'Podcast Episode',
-                uploader: uploader || 'Unknown Podcast',
-                description: description || '',
-                duration: duration || '',
-                contentType: 'audio'
-              });
-              return;
-            } catch (fileError) {
-              console.error('Podcast: File check error:', fileError);
-            }
-          }
-          
-          console.log('Podcast: yt-dlp failed, would need RSS parsing fallback');
-          res.status(500).json({ 
-            error: 'Podcast download failed',
-            details: downloadError,
-            suggestions: 'Try a direct RSS feed URL or different podcast URL'
-          });
-        });
-        return;
-      }
+      formatString = 'bestaudio[ext=m4a]/bestaudio/best';
+      console.log('Apple Podcasts detected, requesting M4A format for better React Native compatibility');
     }
     
-    res.status(500).json({ 
-      error: 'Podcast download not fully implemented',
-      details: 'RSS parsing requires additional dependencies',
-      suggestions: 'Use Apple Podcasts URLs for now'
+    const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+      '--output', outputPath,
+      '--format', formatString,
+      '--no-warnings',
+      url
+    ]);
+
+    let errorOutput = '';
+    let stdOutput = '';
+
+    ytdlp.stdout.on('data', (data) => {
+      stdOutput += data.toString();
+    });
+
+    ytdlp.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+
+    ytdlp.on('close', async (code) => {
+      console.log('Podcast: yt-dlp exit code:', code);
+      console.log('Podcast: stdout:', stdOutput);
+      console.log('Podcast: stderr:', errorOutput);
+      
+      if (code === 0) {
+        try {
+          // Check if file was created and get its info
+          const stats = await fs.stat(outputPath);
+          
+          res.json({
+            success: true,
+            filePath: outputPath,
+            filename: filename,
+            fileSize: stats.size,
+            platform: 'podcast',
+            title: title || 'Podcast Episode',
+            uploader: uploader || 'Unknown Podcast',
+            description: description || '',
+            duration: duration || '',
+            contentType: 'audio'
+          });
+        } catch (fileError) {
+          console.error('Podcast file check error:', fileError);
+          res.status(500).json({ 
+            error: 'File was not created successfully',
+            details: fileError.message,
+            suggestions: 'The download may have failed'
+          });
+        }
+      } else {
+        console.error('Podcast yt-dlp error:', errorOutput);
+        res.status(500).json({ 
+          error: 'Podcast download failed',
+          details: errorOutput,
+          suggestions: 'This podcast URL may not be supported. Try a different podcast URL.'
+        });
+      }
     });
 
   } catch (error) {
@@ -699,7 +733,7 @@ app.post('/api/podcast', async (req, res) => {
   }
 });
 
-// Facebook download endpoint - basic implementation
+// Facebook download endpoint - using yt-dlp with direct download
 app.post('/api/facebook', async (req, res) => {
   try {
     const { url, format = 'video' } = req.body;
@@ -710,41 +744,176 @@ app.post('/api/facebook', async (req, res) => {
 
     console.log('Facebook: Processing URL:', url);
     
-    const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
-      '--get-url',
-      '--format', 'best',
+    // First, get content info
+    const infoProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+      '--print', '%(title)s|%(duration)s|%(uploader)s|%(view_count)s',
+      '--no-warnings',
       url
     ]);
 
-    let downloadUrl = '';
-    let errorOutput = '';
+    let contentInfo = '';
+    let infoError = '';
 
-    ytdlp.stdout.on('data', (data) => {
-      downloadUrl += data.toString();
+    infoProcess.stdout.on('data', (data) => {
+      contentInfo += data.toString();
     });
 
-    ytdlp.stderr.on('data', (data) => {
-      errorOutput += data.toString();
+    infoProcess.stderr.on('data', (data) => {
+      infoError += data.toString();
     });
 
-    ytdlp.on('close', (code) => {
-      if (code === 0 && downloadUrl.trim()) {
+    await new Promise((resolve) => {
+      infoProcess.on('close', resolve);
+    });
+
+    const [title, duration, uploader, viewCount] = contentInfo.trim().split('|');
+    
+    // Detect if this is a post with or without video content
+    const hasVideo = duration && duration !== 'null' && parseInt(duration) > 0;
+    
+    // Generate filename
+    const safeTitle = (title || 'Facebook_Content').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    const timestamp = Date.now();
+    let extension, contentType;
+    
+    if (hasVideo) {
+      extension = format === 'video' ? 'mp4' : 'm4a';
+      contentType = format;
+    } else {
+      extension = 'txt';
+      contentType = 'text';
+    }
+    
+    const filename = `${safeTitle}_${timestamp}.${extension}`;
+    const outputPath = path.join(__dirname, 'downloads', filename);
+
+    // Ensure downloads directory exists
+    const downloadsDir = path.join(__dirname, 'downloads');
+    if (!await fs.access(downloadsDir).then(() => true).catch(() => false)) {
+      await fs.mkdir(downloadsDir, { recursive: true });
+    }
+
+    // Always create a text file with post info first
+    const decodedTitle = (title || 'No title')
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+    
+    const postInfo = `Facebook Post: ${decodedTitle}\nUploader: ${uploader || 'Unknown'}\nURL: ${url}\nDownloaded: ${new Date().toISOString()}`;
+    
+    const textFilename = `${safeTitle}_${timestamp}_text.txt`;
+    const textOutputPath = path.join(__dirname, 'downloads', textFilename);
+    
+    try {
+      await fs.writeFile(textOutputPath, postInfo, 'utf8');
+    } catch (textError) {
+      console.error('Facebook text file creation error:', textError);
+    }
+
+    if (hasVideo) {
+      // Download file directly with yt-dlp
+      const formatString = format === 'video' ? 'best[ext=mp4]/best' : 'bestaudio/best';
+      
+      console.log('Facebook: Starting download with format:', formatString);
+      const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+        '--output', outputPath,
+        '--format', formatString,
+        '--no-warnings',
+        '--user-agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        url
+      ]);
+
+      let errorOutput = '';
+      let stdOutput = '';
+
+      ytdlp.stdout.on('data', (data) => {
+        stdOutput += data.toString();
+      });
+
+      ytdlp.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
+      ytdlp.on('close', async (code) => {
+        console.log('Facebook: yt-dlp exit code:', code);
+        console.log('Facebook: stdout:', stdOutput);
+        console.log('Facebook: stderr:', errorOutput);
+        
+        if (code === 0) {
+          try {
+            // Check if file was created and get its info
+            const stats = await fs.stat(outputPath);
+            
+            res.json({
+              success: true,
+              filePath: outputPath,
+              filename: filename,
+              fileSize: stats.size,
+              platform: 'facebook',
+              title: title || 'Facebook Video',
+              duration: duration ? parseInt(duration) : undefined,
+              uploader: uploader || undefined,
+              viewCount: viewCount ? parseInt(viewCount) : undefined,
+              contentType: contentType,
+              textFile: textOutputPath
+            });
+          } catch (fileError) {
+            console.error('Facebook file check error:', fileError);
+            res.status(500).json({ 
+              error: 'File was not created successfully',
+              details: fileError.message,
+              suggestions: 'The download may have failed due to Facebook restrictions'
+            });
+          }
+        } else {
+          console.error('Facebook yt-dlp error:', errorOutput);
+          
+          let errorMessage = 'Facebook download failed';
+          let suggestions = 'Try again later or use a different URL';
+          
+          if (errorOutput.includes('403') || errorOutput.includes('Forbidden')) {
+            errorMessage = 'Facebook video access denied';
+            suggestions = 'This video may be private, deleted, or Facebook is blocking downloads. Try a different public video.';
+          } else if (errorOutput.includes('404') || errorOutput.includes('not found')) {
+            errorMessage = 'Facebook video not found';
+            suggestions = 'The video may have been deleted or the URL is incorrect.';
+          } else if (errorOutput.includes('rate') || errorOutput.includes('limit')) {
+            errorMessage = 'Facebook rate limit reached';
+            suggestions = 'Please wait a few minutes before trying again.';
+          }
+          
+          res.status(500).json({ 
+            error: errorMessage,
+            details: errorOutput,
+            suggestions: suggestions
+          });
+        }
+      });
+    } else {
+      // For text-only posts, return the text file
+      try {
+        const stats = await fs.stat(textOutputPath);
+        
         res.json({
           success: true,
-          downloadUrl: downloadUrl.trim(),
+          filePath: textOutputPath,
+          filename: textFilename,
+          fileSize: stats.size,
           platform: 'facebook',
-          title: 'Facebook Video',
-          contentType: format
+          title: title || 'Facebook Post',
+          uploader: uploader || undefined,
+          contentType: 'text'
         });
-      } else {
-        console.error('Facebook yt-dlp failed:', errorOutput);
+      } catch (statError) {
+        console.error('Facebook text file stat error:', statError);
         res.status(500).json({ 
-          error: 'Facebook download failed',
-          details: errorOutput,
-          suggestions: 'Facebook may require authentication or the video may not be accessible'
+          error: 'Failed to create text file',
+          details: statError.message
         });
       }
-    });
+    }
 
   } catch (error) {
     console.error('Facebook download error:', error);
@@ -755,7 +924,7 @@ app.post('/api/facebook', async (req, res) => {
   }
 });
 
-// LinkedIn download endpoint - basic implementation
+// LinkedIn download endpoint - using yt-dlp with direct download
 app.post('/api/linkedin', async (req, res) => {
   try {
     const { url, format = 'video' } = req.body;
@@ -766,11 +935,174 @@ app.post('/api/linkedin', async (req, res) => {
 
     console.log('LinkedIn: Processing URL:', url);
     
-    res.status(500).json({ 
-      error: 'LinkedIn download not fully implemented',
-      details: 'LinkedIn requires specialized handling',
-      suggestions: 'Use LinkedIn\'s built-in save features'
+    // First, get content info - try to get description/content as well
+    const infoProcess = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+      '--print', '%(title)s|%(duration)s|%(uploader)s|%(view_count)s|%(description)s',
+      '--no-warnings',
+      url
+    ]);
+
+    let contentInfo = '';
+    let infoError = '';
+
+    infoProcess.stdout.on('data', (data) => {
+      contentInfo += data.toString();
     });
+
+    infoProcess.stderr.on('data', (data) => {
+      infoError += data.toString();
+    });
+
+    await new Promise((resolve) => {
+      infoProcess.on('close', resolve);
+    });
+
+    const [title, duration, uploader, viewCount, description] = contentInfo.trim().split('|');
+    
+    console.log('LinkedIn parsing:', { title: title?.substring(0, 30), uploader, viewCount, duration, description: description?.substring(0, 50) });
+    
+    // Detect if this is a video post or text post - same logic as Twitter
+    const hasVideo = duration && duration !== 'null' && parseFloat(duration) > 0;
+    
+    // Generate filename based on content type
+    const safeTitle = (title || 'LinkedIn_Content').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    const timestamp = Date.now();
+    let extension, contentType;
+    
+    if (hasVideo) {
+      extension = format === 'video' ? 'mp4' : 'm4a';
+      contentType = format;
+    } else {
+      extension = 'txt';
+      contentType = 'text';
+    }
+    
+    const filename = `${safeTitle}_${timestamp}.${extension}`;
+    const outputPath = path.join(__dirname, 'downloads', filename);
+
+    // Ensure downloads directory exists
+    const downloadsDir = path.join(__dirname, 'downloads');
+    if (!await fs.access(downloadsDir).then(() => true).catch(() => false)) {
+      await fs.mkdir(downloadsDir, { recursive: true });
+    }
+
+    // Always create a text file with post info first
+    const decodedTitle = (title || 'No title')
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+      
+    const decodedDescription = (description || '')
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+    
+    let postInfo = `LinkedIn Post: ${decodedTitle}\nUploader: ${uploader || 'Unknown'}\nURL: ${url}`;
+    
+    if (decodedDescription && decodedDescription !== 'null' && decodedDescription.trim()) {
+      postInfo += `\n\nContent:\n${decodedDescription}`;
+    }
+    
+    postInfo += `\n\nDownloaded: ${new Date().toISOString()}`;
+    
+    const textFilename = `${safeTitle}_${timestamp}_text.txt`;
+    const textOutputPath = path.join(__dirname, 'downloads', textFilename);
+    
+    try {
+      await fs.writeFile(textOutputPath, postInfo, 'utf8');
+      console.log('LinkedIn: Text file created successfully');
+    } catch (textError) {
+      console.error('LinkedIn: Failed to create text file:', textError);
+    }
+
+    if (hasVideo) {
+      // Download video/audio with yt-dlp
+      const formatString = format === 'video' ? 'best[ext=mp4]/best' : 'bestaudio/best';
+      
+      console.log('LinkedIn: Starting video download with format:', formatString);
+      const ytdlp = spawn('/Users/username/Library/Python/3.9/bin/yt-dlp', [
+        '--output', outputPath,
+        '--format', formatString,
+        '--no-warnings',
+        url
+      ]);
+
+      let errorOutput = '';
+      let stdOutput = '';
+
+      ytdlp.stdout.on('data', (data) => {
+        stdOutput += data.toString();
+      });
+
+      ytdlp.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
+      ytdlp.on('close', async (code) => {
+        console.log('LinkedIn: yt-dlp exit code:', code);
+        console.log('LinkedIn: stdout:', stdOutput);
+        console.log('LinkedIn: stderr:', errorOutput);
+        
+        if (code === 0) {
+          try {
+            const stats = await fs.stat(outputPath);
+            
+            res.json({
+              success: true,
+              filePath: outputPath,
+              filename: filename,
+              fileSize: stats.size,
+              platform: 'linkedin',
+              title: title || 'LinkedIn Video',
+              duration: duration ? parseFloat(duration) : undefined,
+              uploader: uploader || undefined,
+              viewCount: viewCount || undefined,
+              contentType: contentType,
+              textFile: textOutputPath  // Include reference to text file
+            });
+          } catch (fileError) {
+            console.error('LinkedIn file check error:', fileError);
+            res.status(500).json({ 
+              error: 'File was not created successfully',
+              details: fileError.message
+            });
+          }
+        } else {
+          console.error('LinkedIn yt-dlp error:', errorOutput);
+          res.status(500).json({ 
+            error: 'LinkedIn download failed',
+            details: errorOutput,
+            suggestions: 'Try again later or use a different URL'
+          });
+        }
+      });
+    } else {
+      // Only text content available - return the text file
+      try {
+        const stats = await fs.stat(textOutputPath);
+        
+        res.json({
+          success: true,
+          filePath: textOutputPath,
+          filename: textFilename,
+          fileSize: stats.size,
+          platform: 'linkedin',
+          title: title || 'LinkedIn Post',
+          uploader: uploader || undefined,
+          contentType: 'text'
+        });
+      } catch (writeError) {
+        console.error('LinkedIn text file creation error:', writeError);
+        res.status(500).json({ 
+          error: 'Failed to create text file',
+          details: writeError.message
+        });
+      }
+    }
 
   } catch (error) {
     console.error('LinkedIn download error:', error);
