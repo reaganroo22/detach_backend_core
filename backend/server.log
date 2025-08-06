@@ -1,0 +1,41 @@
+Social Media Downloader Backend running on port 3003
+Health check: http://localhost:3003/api/health
+Available endpoints:
+  POST /api/youtube - Download YouTube videos
+  POST /api/youtube-ytdlp - Download YouTube videos using yt-dlp
+  POST /api/instagram - Download Instagram content using Instaloader
+  POST /api/tiktok - Download TikTok videos
+  POST /api/twitter - Download Twitter/X videos and posts
+  POST /api/podcast - Download podcast episodes from RSS feeds
+  POST /api/facebook - Download Facebook videos
+  POST /api/linkedin - Download LinkedIn videos and posts
+  POST /api/download - Generic download endpoint
+2025-08-06T05:53:27.262Z - GET /api/health
+2025-08-06T05:53:27.283Z - POST /api/tiktok
+TikTok: Processing URL via Snaptik API: https://www.tiktok.com/@username/video/7234567890123456789
+2025-08-06T05:53:30.207Z - POST /api/instagram
+Instagram: Processing URL via InDown.io API: https://www.instagram.com/p/DM84BuhRsdT/
+Instagram: InDown.io API failed, trying FastDl... Request failed with status code 419
+Instagram: Both APIs failed, creating info file... Request failed with status code 404
+2025-08-06T05:53:56.671Z - POST /api/twitter
+Twitter: Processing URL via ssstwitter API: https://twitter.com/elonmusk/status/1951374490228891988
+Twitter: ssstwitter API failed, trying x-downloader... Request failed with status code 401
+Twitter: Both APIs failed, creating info file... Request failed with status code 405
+2025-08-06T05:53:57.827Z - POST /api/facebook
+Facebook: Processing URL via FDown.net API: https://www.facebook.com/watch/?v=123456789
+Facebook: FDown.net API failed, trying SnapSave... Request failed with status code 403
+Facebook: Both APIs failed, creating info file... timeout of 25000ms exceeded
+2025-08-06T05:54:22.976Z - POST /api/linkedin
+LinkedIn: Processing URL via enhanced content extraction: https://www.linkedin.com/posts/someuser_post-123456
+LinkedIn: Content extraction failed, creating info file... Request failed with status code 404
+2025-08-06T05:54:23.197Z - POST /api/youtube-ytdlp
+2025-08-06T12:54:19.044Z - POST /api/twitter
+Twitter: Processing URL via ssstwitter API: https://twitter.com/elonmusk/status/1948042205593268442
+Twitter: ssstwitter API failed, trying x-downloader... Request failed with status code 401
+Twitter: Both APIs failed, creating info file... Request failed with status code 405
+2025-08-06T12:54:20.192Z - GET /api/file/Twitter_Info_1754484859045.txt
+2025-08-06T12:56:49.496Z - POST /api/twitter
+Twitter: Processing URL via ssstwitter API: https://twitter.com/SpaceX/status/1759402181933437804
+Twitter: ssstwitter API failed, trying x-downloader... Request failed with status code 401
+Twitter: Both APIs failed, creating info file... Request failed with status code 405
+2025-08-06T12:56:51.515Z - GET /api/file/Twitter_Info_1754485009496.txt

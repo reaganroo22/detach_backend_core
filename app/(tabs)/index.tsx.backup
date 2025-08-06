@@ -1,0 +1,362 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  Linking,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Download, ExternalLink, CircleAlert as AlertCircle } from 'lucide-react-native';
+
+interface DownloadItem {
+  id: string;
+  url: string;
+  platform: string;
+  timestamp: Date;
+  status: 'pending' | 'completed' | 'error';
+}
+
+export default function DownloadTab() {
+  const [url, setUrl] = useState('');
+  const [downloads, setDownloads] = useState<DownloadItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const detectPlatform = (url: string): string => {
+    if (url.includes('youtube.com') || url.includes('youtu.be')) return 'YouTube';
+    if (url.includes('instagram.com')) return 'Instagram';
+    if (url.includes('tiktok.com')) return 'TikTok';
+    if (url.includes('facebook.com')) return 'Facebook';
+    if (url.includes('twitter.com') || url.includes('x.com')) return 'X/Twitter';
+    if (url.includes('linkedin.com')) return 'LinkedIn';
+    if (url.includes('pinterest.com')) return 'Pinterest';
+    if (url.includes('reddit.com')) return 'Reddit';
+    return 'Unknown';
+  };
+
+  const isValidUrl = (string: string): boolean => {
+    try {
+      new URL(string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!url.trim()) {
+      Alert.alert('Error', 'Please enter a URL');
+      return;
+    }
+
+    if (!isValidUrl(url)) {
+      Alert.alert('Error', 'Please enter a valid URL');
+      return;
+    }
+
+    setIsLoading(true);
+    const platform = detectPlatform(url);
+    
+    const newDownload: DownloadItem = {
+      id: Date.now().toString(),
+      url: url.trim(),
+      platform,
+      timestamp: new Date(),
+      status: 'pending',
+    };
+
+    setDownloads(prev => [newDownload, ...prev]);
+
+    // Simulate download process
+    setTimeout(() => {
+      setDownloads(prev =>
+        prev.map(item =>
+          item.id === newDownload.id
+            ? { ...item, status: 'completed' as const }
+            : item
+        )
+      );
+      setIsLoading(false);
+      setUrl('');
+      Alert.alert('Success', 'Content downloaded successfully!');
+    }, 2000);
+  };
+
+  const openUrl = (url: string) => {
+    Linking.openURL(url);
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Download Social Media Content</Text>
+          <Text style={styles.subtitle}>
+            Save content locally for intentional consumption
+          </Text>
+        </View>
+
+        <View style={styles.inputSection}>
+          <Text style={styles.label}>Paste URL</Text>
+          <TextInput
+            style={styles.input}
+            value={url}
+            onChangeText={setUrl}
+            placeholder="https://www.youtube.com/watch?v=..."
+            placeholderTextColor="#9ca3af"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
+          
+          <TouchableOpacity
+            style={[styles.downloadButton, isLoading && styles.downloadButtonDisabled]}
+            onPress={handleDownload}
+            disabled={isLoading}
+          >
+            <Download size={20} color="#ffffff" />
+            <Text style={styles.downloadButtonText}>
+              {isLoading ? 'Downloading...' : 'Download'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.supportedPlatforms}>
+          <Text style={styles.sectionTitle}>Supported Platforms</Text>
+          <View style={styles.platformGrid}>
+            {['YouTube', 'Instagram', 'TikTok', 'Facebook', 'X/Twitter', 'LinkedIn', 'Pinterest', 'Reddit'].map((platform) => (
+              <View key={platform} style={styles.platformChip}>
+                <Text style={styles.platformText}>{platform}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {downloads.length > 0 && (
+          <View style={styles.recentDownloads}>
+            <Text style={styles.sectionTitle}>Recent Downloads</Text>
+            {downloads.slice(0, 5).map((item) => (
+              <View key={item.id} style={styles.downloadItem}>
+                <View style={styles.downloadInfo}>
+                  <Text style={styles.platformName}>{item.platform}</Text>
+                  <Text style={styles.downloadTime}>
+                    {item.timestamp.toLocaleTimeString()}
+                  </Text>
+                </View>
+                <View style={styles.downloadActions}>
+                  <View style={[
+                    styles.statusBadge,
+                    item.status === 'completed' && styles.statusCompleted,
+                    item.status === 'pending' && styles.statusPending,
+                    item.status === 'error' && styles.statusError,
+                  ]}>
+                    <Text style={styles.statusText}>{item.status}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.iconButton}
+                    onPress={() => openUrl(item.url)}
+                  >
+                    <ExternalLink size={16} color="#6b7280" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.disclaimer}>
+          <AlertCircle size={16} color="#f59e0b" />
+          <Text style={styles.disclaimerText}>
+            This app helps you save content for intentional, offline consumption. 
+            Please respect content creators' rights and platform terms of service.
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f9fafb',
+  },
+  scrollContent: {
+    padding: 20,
+  },
+  header: {
+    marginBottom: 30,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  inputSection: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#111827',
+    backgroundColor: '#f9fafb',
+    marginBottom: 16,
+  },
+  downloadButton: {
+    backgroundColor: '#2563eb',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  downloadButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  downloadButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  supportedPlatforms: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 16,
+  },
+  platformGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  platformChip: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  platformText: {
+    fontSize: 14,
+    color: '#2563eb',
+    fontWeight: '500',
+  },
+  recentDownloads: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  downloadItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  downloadInfo: {
+    flex: 1,
+  },
+  platformName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#111827',
+  },
+  downloadTime: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  downloadActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusCompleted: {
+    backgroundColor: '#dcfce7',
+  },
+  statusPending: {
+    backgroundColor: '#fef3c7',
+  },
+  statusError: {
+    backgroundColor: '#fecaca',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  iconButton: {
+    padding: 4,
+  },
+  disclaimer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#fffbeb',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  disclaimerText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#92400e',
+    lineHeight: 20,
+  },
+});

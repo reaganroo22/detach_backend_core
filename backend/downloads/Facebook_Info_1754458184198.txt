@@ -1,0 +1,22 @@
+Facebook Download Limitation
+
+URL: https://www.facebook.com/watch/?v=123456789
+
+Facebook now requires authentication for most video content.
+
+The platform has restricted access to:
+- Video downloads
+- Public posts
+- Media files
+
+Recommended alternatives:
+1. Save video directly from Facebook app
+2. Use Facebook's "Save Post" feature
+3. Screen record if legally permitted
+4. Contact content creator for sharing
+
+Technical Details: /Users/username/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+ERROR: [facebook] 1234567...
+
+Downloaded: 2025-08-06T05:29:45.117Z

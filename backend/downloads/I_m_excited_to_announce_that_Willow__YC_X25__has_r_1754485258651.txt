@@ -1,0 +1,57 @@
+LinkedIn Post
+
+Title: I'm excited to announce that Willow (YC X25) has raised $4.2 million to build voice-first interfaces
+
+Author: LinkedIn User
+
+Content: I'm excited to announce that Willow (YC X25) has raised $4.2 million to build voice-first interfaces. 
+
+We started Willow after dropping out of Stanford freshman year to build a healthcare startup. It failed. We pivoted over 10 times, spent a year in the trenches, and learned how to build the hard way.
+
+But we discovered something huge.
+
+Voice scribes were giving doctors their lives back. They were able to focus on helping patients rather than wasting nights and weekends on paperwork.
+
+That's when it hit us. If voice could transform healthcare, why not every knowledge worker? Why are a billion professionals still hammering away at keyboards to communicate with humans (email, Slack, writing) and AI (ChatGPT, Cursor)?
+
+Today, thousands of professionals at companies like Canva, GitHub, and Webflow use Willow to work 5x faster.
+
+We're building Willow to unlock voice as the universal interface where you can control any device, any app, any workflow simply by speaking.
+
+–
+
+This $4.2M round was led by Boxgroup, with participation from Goodwater Capital, Burst Capital, and Liquid 2 Ventures.
+
+We’re also backed by an Avengers-level group of investors, including:
+
+Max Mullen (Founder, Instacart)
+Kaz Nejatian (COO, Shopify)
+Dharmesh Shah (CTO/Founder, HubSpot)
+Tomer London (CPO/Founder, Gusto)
+Geoff Donaker (COO, Yelp)
+Ankur Nagpal (Founder, Teachable)
+Steven Zhou (CEO/Founder, Moov)
+Daniel Reid Cahn (CEO/Founder, Slingshot AI)
+John Andrew Entwistle (CEO/Founder, Wander)
+Mercedes Bent (Venture Partner, Lightspeed)
+JJ Fliegelman (CTO/Founder, Wayup)
+
+Special thanks to our earliest believers: Adam Guild (CEO/Founder, Owner), Cory Levy (Founder, ZFellows), and Nicolas Dessaigne (Partner, YC).
+
+And most importantly, thank you to the best co-founder and CTO Lawrence Liu. 
+
+–
+
+We're hiring for founding engineer, designer, and ML roles who want to redefine how humans work. 
+
+Join a world-class team building technology that transforms lives daily with top-tier compensation and equity.
+
+Comment "Join Willow" if you want to be fast-tracked.
+
+The next decade will be defined by voice-first computing. The question isn't whether this transformation will happen. It's whether you'll be part of building it.
+
+Original URL: https://www.linkedin.com/posts/allan-guo_im-excited-to-announce-that-willow-yc-x25-activity-7350951044551462912-u7h3
+
+Note: LinkedIn restricts content access to maintain professional privacy and security.
+
+Downloaded: 2025-08-06T13:00:59.347Z
