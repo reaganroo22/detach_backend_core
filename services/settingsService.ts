@@ -9,7 +9,6 @@ export interface AppSettings {
   notifications: boolean;
   storageLocation: string;
   maxFileSize: number; // in MB
-  blackAndWhiteImages: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -21,12 +20,16 @@ const DEFAULT_SETTINGS: AppSettings = {
   notifications: true,
   storageLocation: 'default',
   maxFileSize: 100,
-  blackAndWhiteImages: true,
 };
 
 class SettingsService {
   private settings: AppSettings = DEFAULT_SETTINGS;
   private listeners: ((settings: AppSettings) => void)[] = [];
+  private initialized = false;
+
+  constructor() {
+    this.loadSettings();
+  }
 
   async loadSettings(): Promise<AppSettings> {
     try {
@@ -34,9 +37,11 @@ class SettingsService {
       if (stored) {
         this.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
       }
+      this.initialized = true;
       return this.settings;
     } catch (error) {
       console.error('Error loading settings:', error);
+      this.initialized = true;
       return DEFAULT_SETTINGS;
     }
   }

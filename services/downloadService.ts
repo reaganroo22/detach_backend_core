@@ -3,11 +3,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { settingsService } from './settingsService';
 
+export interface Folder {
+  id: string;
+  name: string;
+  createdAt: string;
+  itemCount: number;
+}
+
 export interface DownloadItem {
   id: string;
   url: string;
   title: string;
-  platform: 'youtube' | 'instagram' | 'tiktok' | 'twitter' | 'podcast' | 'facebook' | 'linkedin';
+  platform: 'youtube' | 'instagram' | 'tiktok' | 'twitter' | 'podcast' | 'facebook' | 'linkedin' | 'pinterest';
   status: 'pending' | 'downloading' | 'completed' | 'failed';
   progress: number;
   filePath?: string;
@@ -19,15 +26,30 @@ export interface DownloadItem {
   uploader?: string;
   viewCount?: number;
   actualFormat?: 'audio' | 'video'; // What was actually downloaded
+  // Playlist-specific fields
+  isPlaylist?: boolean;
+  playlistPath?: string;
+  downloadedFiles?: string[];
+  playlistItems?: Array<{
+    title: string;
+    filename: string;
+    duration?: number;
+    uploader?: string;
+    index?: number;
+  }>;
+  // Folder organization
+  folderId?: string; // ID of the folder this item belongs to (null = root/All Downloads)
 }
 
 class DownloadService {
   private downloads: Map<string, DownloadItem> = new Map();
+  private folders: Map<string, Folder> = new Map();
   private downloadDirectory = `${FileSystem.documentDirectory}downloads/`;
 
   constructor() {
     this.initializeDownloadDirectory();
     this.loadDownloadsFromStorage();
+    this.loadFoldersFromStorage();
   }
 
   private async initializeDownloadDirectory() {
@@ -56,12 +78,31 @@ class DownloadService {
     }
   }
 
+  private async saveFoldersToStorage() {
+    const foldersArray = Array.from(this.folders.values());
+    await AsyncStorage.setItem('@folders', JSON.stringify(foldersArray));
+  }
+
+  private async loadFoldersFromStorage() {
+    try {
+      const storedFolders = await AsyncStorage.getItem('@folders');
+      if (storedFolders) {
+        const foldersArray: Folder[] = JSON.parse(storedFolders);
+        foldersArray.forEach(folder => {
+          this.folders.set(folder.id, folder);
+        });
+      }
+    } catch (error) {
+      console.error('Error loading folders from storage:', error);
+    }
+  }
+
   private generateId(): string {
     return Date.now().toString() + Math.random().toString(36).substr(2, 9);
   }
 
   private detectPlatform(url: string): DownloadItem['platform'] | null {
-    // Implemented platforms
+    // Detect platforms - treat everything as individual content (no playlists)
     if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
     if (url.includes('instagram.com')) return 'instagram';
     if (url.includes('tiktok.com')) return 'tiktok';
@@ -69,9 +110,12 @@ class DownloadService {
     if (url.includes('podcasts.apple.com') || url.includes('.rss') || url.includes('podcast') || url.includes('/feed')) return 'podcast';
     if (url.includes('facebook.com') || url.includes('fb.watch')) return 'facebook';
     if (url.includes('linkedin.com')) return 'linkedin';
+    if (url.includes('pinterest.com')) return 'pinterest';
     
     return null;
   }
+
+  // Removed playlist detection - treating all URLs as individual content
 
   private detectContentType(platform: DownloadItem['platform'], url: string): DownloadItem['contentType'] {
     // Get user preference from settings for default download format
@@ -109,6 +153,10 @@ class DownloadService {
       case 'linkedin':
         // LinkedIn can have videos or text posts
         return 'text'; // We'll detect video vs text in backend
+        
+      case 'pinterest':
+        // Pinterest is primarily images
+        return 'image';
         
       default:
         return 'audio';
@@ -151,11 +199,16 @@ class DownloadService {
     this.downloads.set(id, downloadItem);
     await this.saveDownloadsToStorage();
     
-    this.startDownload(id);
+    // Check if auto-download is enabled
+    const settings = settingsService.getSettings();
+    if (settings.autoDownload) {
+      this.startDownload(id);
+    }
+    
     return id;
   }
 
-  private async startDownload(id: string) {
+  async startDownload(id: string) {
     const item = this.downloads.get(id);
     if (!item) return;
 
@@ -187,6 +240,9 @@ class DownloadService {
           break;
         case 'linkedin':
           downloadData = await this.getLinkedInDownloadUrl(item.url);
+          break;
+        case 'pinterest':
+          downloadData = await this.getPinterestDownloadUrl(item.url);
           break;
         default:
           throw new Error(`Platform ${item.platform} not yet implemented`);
@@ -225,6 +281,8 @@ class DownloadService {
         // Update contentType based on what was actually downloaded
         item.contentType = metadata.actualFormat;
       }
+      
+      // Simplified - no playlist handling, all downloads are individual files
 
       const extension = this.getFileExtension(item.contentType, item.platform);
       const fileName = `${id}_${item.platform}_${item.contentType}.${extension}`;
@@ -296,16 +354,74 @@ class DownloadService {
         format 
       });
       
-      return {
-        url: response.data.downloadUrl,
-        metadata: {
-          title: response.data.title,
-          duration: response.data.duration,
-          uploader: response.data.uploader,
-          viewCount: response.data.viewCount,
-          actualFormat: response.data.contentType
+      // Check if backend downloaded the file directly
+      if (response.data.filePath) {
+        // For videos, download to local device storage for better compatibility
+        if (response.data.contentType === 'video') {
+          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const localPath = `${this.downloadDirectory}${response.data.filename}`;
+          
+          // Download file to local storage for better video playback
+          try {
+            console.log('Downloading YouTube video locally from:', fileUrl);
+            console.log('Saving to local path:', localPath);
+            const downloadResult = await FileSystem.downloadAsync(fileUrl, localPath);
+            console.log('YouTube video downloaded locally to:', downloadResult.uri);
+            return {
+              url: downloadResult.uri,
+              metadata: {
+                title: response.data.title,
+                duration: response.data.duration,
+                uploader: response.data.uploader,
+                viewCount: response.data.viewCount,
+                actualFormat: response.data.contentType,
+                fileSize: response.data.fileSize
+              }
+            };
+          } catch (localDownloadError) {
+            console.error('Failed to download YouTube video locally, using server URL:', localDownloadError);
+            // Fallback to server URL
+            const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+            return {
+              url: fileUrl,
+              metadata: {
+                title: response.data.title,
+                duration: response.data.duration,
+                uploader: response.data.uploader,
+                viewCount: response.data.viewCount,
+                actualFormat: response.data.contentType,
+                fileSize: response.data.fileSize
+              }
+            };
+          }
+        } else {
+          // For audio, use server URL directly
+          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          return {
+            url: fileUrl,
+            metadata: {
+              title: response.data.title,
+              duration: response.data.duration,
+              uploader: response.data.uploader,
+              viewCount: response.data.viewCount,
+              actualFormat: response.data.contentType,
+              fileSize: response.data.fileSize
+            }
+          };
         }
-      };
+      } else {
+        // Fallback to old URL method (shouldn't happen with new backend)
+        return {
+          url: response.data.downloadUrl,
+          metadata: {
+            title: response.data.title,
+            duration: response.data.duration,
+            uploader: response.data.uploader,
+            viewCount: response.data.viewCount,
+            actualFormat: response.data.contentType
+          }
+        };
+      }
     } catch (error) {
       console.error('YouTube download failed:', error);
       return null;
@@ -590,12 +706,13 @@ class DownloadService {
 
   private async getPodcastDownloadUrl(url: string): Promise<{url: string, metadata: any} | null> {
     try {
-      const response = await axios.post('http://192.168.1.239:3003/api/podcast', { 
+      // All podcast URLs are treated as individual episodes
+      const response = await axios.post(`http://192.168.1.239:3003/api/podcast`, { 
         url,
-        episodeIndex: 0 // Latest episode
+        format: 'audio'
       });
       
-      // Check if backend downloaded the file directly
+      // Handle single file downloads
       if (response.data.filePath) {
         // For audio, use server URL directly
         const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
@@ -751,6 +868,37 @@ class DownloadService {
     }
   }
 
+  private async getPinterestDownloadUrl(url: string): Promise<{url: string, metadata: any} | null> {
+    try {
+      const settings = settingsService.getSettings();
+      const format = settings.downloadFormat; // 'audio' or 'video'
+      
+      const response = await axios.post('http://192.168.1.239:3003/api/pinterest', { 
+        url,
+        format 
+      });
+      
+      // Check if backend downloaded the file directly
+      if (response.data.filePath) {
+        // For images, use server URL directly
+        const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+        return {
+          url: fileUrl,
+          metadata: {
+            title: response.data.title,
+            uploader: response.data.uploader,
+            actualFormat: response.data.contentType,
+            fileSize: response.data.fileSize,
+            description: response.data.description
+          }
+        };
+      }
+    } catch (error: any) {
+      console.error('Pinterest download failed:', error);
+      return null;
+    }
+  }
+
   async clearAllDownloads(): Promise<void> {
     for (const item of this.downloads.values()) {
       if (item.filePath) {
@@ -764,6 +912,88 @@ class DownloadService {
     
     this.downloads.clear();
     await AsyncStorage.removeItem('@downloads');
+  }
+
+  // Folder management methods
+  async createFolder(name: string): Promise<string> {
+    const id = this.generateId();
+    const folder: Folder = {
+      id,
+      name: name.trim(),
+      createdAt: new Date().toISOString(),
+      itemCount: 0
+    };
+
+    this.folders.set(id, folder);
+    await this.saveFoldersToStorage();
+    return id;
+  }
+
+  getFolders(): Folder[] {
+    const folders = Array.from(this.folders.values()).sort((a, b) => 
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    
+    // Update item counts
+    folders.forEach(folder => {
+      folder.itemCount = Array.from(this.downloads.values()).filter(d => d.folderId === folder.id).length;
+    });
+    
+    return folders;
+  }
+
+  getFolder(id: string): Folder | undefined {
+    return this.folders.get(id);
+  }
+
+  async deleteFolder(id: string): Promise<boolean> {
+    const folder = this.folders.get(id);
+    if (!folder) return false;
+
+    // Move all items in this folder back to root (no folder)
+    const itemsInFolder = Array.from(this.downloads.values()).filter(d => d.folderId === id);
+    for (const item of itemsInFolder) {
+      item.folderId = undefined;
+      this.downloads.set(item.id, item);
+    }
+
+    this.folders.delete(id);
+    await this.saveFoldersToStorage();
+    await this.saveDownloadsToStorage();
+    return true;
+  }
+
+  async renameFolder(id: string, newName: string): Promise<boolean> {
+    const folder = this.folders.get(id);
+    if (!folder) return false;
+
+    folder.name = newName.trim();
+    this.folders.set(id, folder);
+    await this.saveFoldersToStorage();
+    return true;
+  }
+
+  async moveToFolder(downloadId: string, folderId?: string): Promise<boolean> {
+    const download = this.downloads.get(downloadId);
+    if (!download) return false;
+
+    // Verify folder exists if folderId is provided
+    if (folderId && !this.folders.has(folderId)) {
+      return false;
+    }
+
+    download.folderId = folderId;
+    this.downloads.set(downloadId, download);
+    await this.saveDownloadsToStorage();
+    return true;
+  }
+
+  getDownloadsByFolder(folderId?: string): DownloadItem[] {
+    return Array.from(this.downloads.values())
+      .filter(item => item.folderId === folderId)
+      .sort((a, b) => 
+        new Date(b.downloadedAt || 0).getTime() - new Date(a.downloadedAt || 0).getTime()
+      );
   }
 }
 

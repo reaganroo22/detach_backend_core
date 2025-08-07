@@ -27,8 +27,9 @@ import {
   Gauge
 } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system';
-// import { ColorMatrix, Grayscale } from 'react-native-color-matrix-image-filters';
+// Removed color matrix filters for production
 import { DownloadItem } from '../services/downloadService';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface EnhancedMediaViewerProps {
   item: DownloadItem;
@@ -48,6 +49,7 @@ type PlaybackStatus = {
 };
 
 export default function EnhancedMediaViewer({ item, visible, onClose }: EnhancedMediaViewerProps) {
+  const { theme } = useTheme();
   const [textContent, setTextContent] = useState('');
   const [imageUri, setImageUri] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -55,6 +57,10 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [showControls, setShowControls] = useState(true);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
+  
+  // Playlist states
+  const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState(0);
+  const [showPlaylist, setShowPlaylist] = useState(false);
   
   // Audio player states
   const [sound, setSound] = useState<Audio.Sound | null>(null);
@@ -137,7 +143,16 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
   };
 
   const loadContent = async () => {
-    if (!item || !item.filePath) return;
+    if (!item) return;
+
+    // Handle playlist differently
+    if (item.isPlaylist) {
+      setIsLoading(false);
+      setShowPlaylist(true);
+      return;
+    }
+
+    if (!item.filePath) return;
 
     setIsLoading(true);
     try {
@@ -164,6 +179,25 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const playPlaylistItem = (index: number) => {
+    if (!item.playlistItems || !item.playlistPath) return;
+    
+    const playlistItem = item.playlistItems[index];
+    if (!playlistItem) return;
+    
+    setCurrentPlaylistIndex(index);
+    
+    // Create a path to the individual file
+    const itemPath = `${item.playlistPath}/${playlistItem.filename}`;
+    
+    // For now, we'll show an alert with the item info
+    Alert.alert(
+      'Playing Item',
+      `${playlistItem.title}\n\nThis would play: ${playlistItem.filename}`,
+      [{ text: 'OK' }]
+    );
   };
 
   const loadAudio = async () => {
@@ -436,33 +470,33 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
             isLooping={false}
             rate={playbackRate}
             isMuted={isMuted}
-          onLoad={(loadStatus) => {
-            console.log('Video onLoad called with status:', loadStatus);
-            if (loadStatus.isLoaded) {
-              console.log('Video loaded successfully - Duration:', loadStatus.durationMillis);
-              setDuration(loadStatus.durationMillis || 0);
-              setVideoStatus({ isLoaded: true });
-            } else {
-              console.log('Video failed to load:', loadStatus);
-            }
-          }}
-          onPlaybackStatusUpdate={(status) => {
-            if (status.isLoaded) {
-              setPosition(status.positionMillis || 0);
-              setIsPlaying(status.isPlaying || false);
-              if (status.durationMillis) {
-                setDuration(status.durationMillis);
+            onLoad={(loadStatus) => {
+              console.log('Video onLoad called with status:', loadStatus);
+              if (loadStatus.isLoaded) {
+                console.log('Video loaded successfully - Duration:', loadStatus.durationMillis);
+                setDuration(loadStatus.durationMillis || 0);
+                setVideoStatus({ isLoaded: true });
+              } else {
+                console.log('Video failed to load:', loadStatus);
               }
-            } else if (status.error) {
-              console.error('Video playback error:', status.error);
-            }
-          }}
-          onError={(error) => {
-            console.error('Video component error:', error);
-            setVideoLoadError(`Video failed to load: ${error}`);
-            Alert.alert('Video Error', 'Failed to load video. Please try again.');
-          }}
-        />
+            }}
+            onPlaybackStatusUpdate={(status) => {
+              if (status.isLoaded) {
+                setPosition(status.positionMillis || 0);
+                setIsPlaying(status.isPlaying || false);
+                if (status.durationMillis) {
+                  setDuration(status.durationMillis);
+                }
+              } else if (status.error) {
+                console.error('Video playback error:', status.error);
+              }
+            }}
+            onError={(error) => {
+              console.error('Video component error:', error);
+              setVideoLoadError(`Video failed to load: ${error}`);
+              Alert.alert('Video Error', 'Failed to load video. Please try again.');
+            }}
+          />
         )}
         
         {/* Custom video controls overlay */}
@@ -640,6 +674,54 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     </View>
   );
 
+  const renderPlaylistViewer = () => {
+    if (!item.playlistItems) return null;
+
+    return (
+      <ScrollView style={styles.playlistContainer}>
+        <View style={styles.playlistHeader}>
+          <Text style={styles.playlistTitle}>
+            📁 Playlist ({item.playlistItems.length} items)
+          </Text>
+          <Text style={styles.playlistSubtitle}>
+            {item.title}
+          </Text>
+        </View>
+        
+        {item.playlistItems.map((playlistItem, index) => (
+          <TouchableOpacity
+            key={index}
+            style={[
+              styles.playlistItem,
+              currentPlaylistIndex === index && styles.playlistItemActive
+            ]}
+            onPress={() => playPlaylistItem(index)}
+          >
+            <View style={styles.playlistItemInfo}>
+              <Text style={styles.playlistItemTitle} numberOfLines={2}>
+                {index + 1}. {playlistItem.title}
+              </Text>
+              {playlistItem.duration && (
+                <Text style={styles.playlistItemDuration}>
+                  {Math.floor(playlistItem.duration / 60)}:
+                  {String(playlistItem.duration % 60).padStart(2, '0')}
+                </Text>
+              )}
+              <Text style={styles.playlistItemFilename} numberOfLines={1}>
+                📄 {playlistItem.filename}
+              </Text>
+            </View>
+            <View style={styles.playlistItemActions}>
+              <TouchableOpacity style={styles.playlistItemButton}>
+                <Play size={16} color="#92400e" />
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    );
+  };
+
   const renderContent = () => {
     if (!item) {
       return (
@@ -647,6 +729,11 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
           <Text style={styles.errorText}>No content available</Text>
         </View>
       );
+    }
+
+    // Handle playlist view
+    if (item.isPlaylist && showPlaylist) {
+      return renderPlaylistViewer();
     }
 
     if (isLoading) {
@@ -1058,5 +1145,71 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#888888',
     textAlign: 'center',
+  },
+  // Playlist styles
+  playlistContainer: {
+    flex: 1,
+    backgroundColor: '#fefce8',
+  },
+  playlistHeader: {
+    padding: 20,
+    borderBottomWidth: 2,
+    borderBottomColor: '#fbbf24',
+    backgroundColor: '#fffbeb',
+  },
+  playlistTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#92400e',
+    marginBottom: 4,
+  },
+  playlistSubtitle: {
+    fontSize: 14,
+    color: '#a16207',
+  },
+  playlistItem: {
+    flexDirection: 'row',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fbbf24',
+    backgroundColor: '#fefce8',
+  },
+  playlistItemActive: {
+    backgroundColor: '#fffbeb',
+    borderLeftWidth: 4,
+    borderLeftColor: '#d97706',
+  },
+  playlistItemInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  playlistItemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#451a03',
+    marginBottom: 4,
+  },
+  playlistItemDuration: {
+    fontSize: 12,
+    color: '#d97706',
+    marginBottom: 2,
+  },
+  playlistItemFilename: {
+    fontSize: 11,
+    color: '#a16207',
+    fontFamily: 'monospace',
+  },
+  playlistItemActions: {
+    justifyContent: 'center',
+  },
+  playlistItemButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fbbf24',
+    borderWidth: 2,
+    borderColor: '#92400e',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

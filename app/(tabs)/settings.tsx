@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../../contexts/ThemeContext';
 import { 
   Bell, 
   Download, 
@@ -21,7 +22,6 @@ import {
   Info,
   Music,
   Video,
-  Image,
   Settings,
   Upload,
   Archive
@@ -31,31 +31,17 @@ import { downloadService } from '../../services/downloadService';
 import { backupService } from '../../services/backupService';
 
 export default function SettingsTab() {
-  const [settings, setSettings] = useState<AppSettings>({
-    downloadFormat: 'audio',
-    audioQuality: 'high',
-    videoQuality: 'medium',
-    autoDownload: false,
-    darkMode: false,
-    notifications: true,
-    storageLocation: 'default',
-    maxFileSize: 100,
-    blackAndWhiteImages: true,
-  });
+  const { theme, settings } = useTheme();
+  const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
 
   useEffect(() => {
-    loadSettings();
-  }, []);
-
-  const loadSettings = async () => {
-    const currentSettings = await settingsService.loadSettings();
-    setSettings(currentSettings);
-  };
+    setLocalSettings(settings);
+  }, [settings]);
 
   const updateSetting = async (key: keyof AppSettings, value: any) => {
     try {
       await settingsService.updateSetting(key, value);
-      setSettings(prev => ({ ...prev, [key]: value }));
+      setLocalSettings(prev => ({ ...prev, [key]: value }));
     } catch (error) {
       Alert.alert('Error', 'Failed to save setting');
     }
@@ -101,6 +87,83 @@ export default function SettingsTab() {
     );
   };
 
+  const handleFileSizeLimit = () => {
+    Alert.alert(
+      'File Size Limit',
+      'Set the maximum file size for downloads:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: '50MB (Conservative)',
+          onPress: () => updateSetting('maxFileSize', 50),
+        },
+        {
+          text: '100MB (Balanced)',
+          onPress: () => updateSetting('maxFileSize', 100),
+        },
+        {
+          text: '200MB (Generous)',
+          onPress: () => updateSetting('maxFileSize', 200),
+        },
+        {
+          text: 'No Limit',
+          onPress: () => updateSetting('maxFileSize', 999),
+        },
+      ]
+    );
+  };
+
+  const handleQualitySettings = () => {
+    Alert.alert(
+      'Quality Settings',
+      'Choose quality preferences:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Low (Fast/Small)',
+          onPress: () => {
+            updateSetting('audioQuality', 'low');
+            updateSetting('videoQuality', 'low');
+          },
+        },
+        {
+          text: 'Medium (Balanced)',
+          onPress: () => {
+            updateSetting('audioQuality', 'medium');
+            updateSetting('videoQuality', 'medium');
+          },
+        },
+        {
+          text: 'High (Best Quality)',
+          onPress: () => {
+            updateSetting('audioQuality', 'high');
+            updateSetting('videoQuality', 'high');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleAppInfo = () => {
+    Alert.alert(
+      'Temperance',
+      `Version 1.0.0
+
+Built for intentional living and spiritual growth.
+
+"Be still and know that I am God" - Psalm 46:10
+
+This app helps you:
+• Download content for offline, mindful consumption
+• Reduce digital distractions
+• Support your spiritual journey
+• Practice digital minimalism
+
+Backend service required for downloading functionality.`,
+      [{ text: 'OK' }]
+    );
+  };
+
   const handleExportBackup = async () => {
     try {
       await backupService.exportBackup();
@@ -140,25 +203,25 @@ export default function SettingsTab() {
       title: 'Download Preferences',
       items: [
         {
-          icon: settings.downloadFormat === 'audio' ? Music : Video,
+          icon: localSettings.downloadFormat === 'audio' ? Music : Video,
           title: 'Download Format',
-          subtitle: `${settings.downloadFormat === 'audio' ? 'Audio Only (Mindful)' : 'Full Video (Standard)'} - Applies to YouTube, TikTok, Instagram Reels`,
+          subtitle: `${localSettings.downloadFormat === 'audio' ? 'Audio Only (Mindful)' : 'Full Video (Standard)'} - Applies to YouTube, TikTok, Instagram Reels`,
           hasArrow: true,
           onPress: handleFormatChange,
+        },
+        {
+          icon: Settings,
+          title: 'Quality Settings',
+          subtitle: `Audio: ${localSettings.audioQuality.charAt(0).toUpperCase() + localSettings.audioQuality.slice(1)} • Video: ${localSettings.videoQuality.charAt(0).toUpperCase() + localSettings.videoQuality.slice(1)}`,
+          hasArrow: true,
+          onPress: handleQualitySettings,
         },
         {
           icon: Download,
           title: 'Auto Download',
           subtitle: 'Start downloading immediately when you paste a URL (otherwise downloads stay pending)',
-          toggle: settings.autoDownload,
+          toggle: localSettings.autoDownload,
           onToggle: (value: boolean) => updateSetting('autoDownload', value),
-        },
-        {
-          icon: Image,
-          title: 'Black & White Media',
-          subtitle: 'Display images and videos in grayscale for mindful viewing',
-          toggle: settings.blackAndWhiteImages,
-          onToggle: (value: boolean) => updateSetting('blackAndWhiteImages', value),
         },
       ],
     },
@@ -169,21 +232,22 @@ export default function SettingsTab() {
           icon: Bell,
           title: 'Notifications',
           subtitle: 'Get notified when downloads complete',
-          toggle: settings.notifications,
+          toggle: localSettings.notifications,
           onToggle: (value: boolean) => updateSetting('notifications', value),
         },
         {
           icon: Moon,
           title: 'Dark Mode',
           subtitle: 'Use dark theme for evening use',
-          toggle: settings.darkMode,
+          toggle: localSettings.darkMode,
           onToggle: (value: boolean) => updateSetting('darkMode', value),
         },
         {
           icon: Shield,
           title: 'File Size Limit',
-          subtitle: `Maximum file size: ${settings.maxFileSize}MB`,
+          subtitle: `Maximum file size: ${localSettings.maxFileSize === 999 ? 'No Limit' : localSettings.maxFileSize + 'MB'}`,
           hasArrow: true,
+          onPress: handleFileSizeLimit,
         },
       ],
     },
@@ -224,10 +288,13 @@ export default function SettingsTab() {
           title: 'App Information',
           subtitle: 'Version 1.0.0 - Built for intentional living',
           hasArrow: true,
+          onPress: handleAppInfo,
         },
       ],
     },
   ];
+
+  const styles = createStyles(theme);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -265,7 +332,7 @@ export default function SettingsTab() {
                   <View style={styles.settingIcon}>
                     <item.icon 
                       size={20} 
-                      color={item.isDestructive ? '#ef4444' : '#6b7280'} 
+                      color={item.isDestructive ? theme.colors.error : theme.colors.text} 
                     />
                   </View>
                   
@@ -286,11 +353,11 @@ export default function SettingsTab() {
                       <Switch
                         value={item.toggle}
                         onValueChange={item.onToggle}
-                        trackColor={{ false: '#f3f4f6', true: '#dbeafe' }}
-                        thumbColor={item.toggle ? '#2563eb' : '#9ca3af'}
+                        trackColor={{ false: theme.colors.cardBackground, true: theme.colors.primary }}
+                        thumbColor={item.toggle ? theme.colors.primaryText : theme.colors.textSecondary}
                       />
                     ) : item.hasArrow ? (
-                      <ChevronRight size={20} color="#9ca3af" />
+                      <ChevronRight size={20} color={theme.colors.text} />
                     ) : null}
                   </View>
                 </TouchableOpacity>
@@ -312,10 +379,10 @@ export default function SettingsTab() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fefce8', // Warm ancient parchment background
+    backgroundColor: theme.colors.background,
   },
   header: {
     padding: 20,
@@ -324,12 +391,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#92400e', // Ancient brown/gold color
+    color: theme.colors.text,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 16,
-    color: '#a16207', // Darker golden color
+    color: theme.colors.textSecondary,
     lineHeight: 24,
   },
   content: {
@@ -337,10 +404,10 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   inspirationalCard: {
-    backgroundColor: '#fffbeb', // Warm cream background
+    backgroundColor: theme.colors.surface,
     borderWidth: 2,
-    borderColor: '#fbbf24', // Golden border
-    borderRadius: 8, // Less rounded for ancient look
+    borderColor: theme.colors.border,
+    borderRadius: 8,
     padding: 20,
     marginHorizontal: 20,
     marginBottom: 24,
@@ -348,14 +415,14 @@ const styles = StyleSheet.create({
   inspirationalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#92400e', // Ancient brown
+    color: theme.colors.text,
     textAlign: 'center',
     marginBottom: 8,
     fontStyle: 'italic',
   },
   inspirationalSubtitle: {
     fontSize: 14,
-    color: '#b45309', // Warm golden brown
+    color: theme.colors.textSecondary,
     textAlign: 'center',
   },
   section: {
@@ -364,17 +431,17 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#92400e', // Ancient brown
+    color: theme.colors.text,
     marginBottom: 12,
     paddingHorizontal: 20,
   },
   sectionContent: {
-    backgroundColor: '#fffbeb', // Warm cream background
+    backgroundColor: theme.colors.surface,
     marginHorizontal: 20,
-    borderRadius: 8, // Less rounded
+    borderRadius: 8,
     borderWidth: 2,
-    borderColor: '#fbbf24', // Golden border
-    shadowColor: '#92400e',
+    borderColor: theme.colors.border,
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -385,7 +452,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: theme.colors.border,
   },
   settingItemLast: {
     borderBottomWidth: 0,
@@ -394,7 +461,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.colors.cardBackground,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -405,7 +472,7 @@ const styles = StyleSheet.create({
   settingTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#111827',
+    color: theme.colors.text,
     marginBottom: 2,
   },
   settingTitleDestructive: {
@@ -413,21 +480,21 @@ const styles = StyleSheet.create({
   },
   settingSubtitle: {
     fontSize: 14,
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     lineHeight: 20,
   },
   settingAction: {
     marginLeft: 12,
   },
   footerSection: {
-    backgroundColor: '#fffbeb', // Warm cream background
+    backgroundColor: theme.colors.surface,
     marginHorizontal: 20,
     borderRadius: 8,
     padding: 20,
     marginBottom: 40,
     borderWidth: 2,
-    borderColor: '#fbbf24', // Golden border
-    shadowColor: '#92400e',
+    borderColor: theme.colors.border,
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -436,12 +503,12 @@ const styles = StyleSheet.create({
   footerTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#92400e', // Ancient brown
+    color: theme.colors.text,
     marginBottom: 8,
   },
   footerText: {
     fontSize: 14,
-    color: '#a16207', // Darker golden color
+    color: theme.colors.textSecondary,
     lineHeight: 22,
   },
 });

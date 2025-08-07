@@ -9,13 +9,18 @@ import {
   Alert,
   Linking,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Download, ExternalLink, CircleAlert as AlertCircle, Trash2, Play, Folder } from 'lucide-react-native';
+import { Download, CircleAlert as AlertCircle, Trash2, Play, Folder } from 'lucide-react-native';
 import { downloadService, DownloadItem } from '../../services/downloadService';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export default function DownloadTab() {
+  const { theme, settings } = useTheme();
   const [url, setUrl] = useState('');
+  const [urls, setUrls] = useState(''); // Multiple URLs input
+  const [isMultipleMode, setIsMultipleMode] = useState(false);
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,6 +49,10 @@ export default function DownloadTab() {
   };
 
   const handleDownload = async () => {
+    if (isMultipleMode) {
+      return handleMultipleDownload();
+    }
+
     if (!url.trim()) {
       Alert.alert('Error', 'Please enter a URL');
       return;
@@ -59,10 +68,79 @@ export default function DownloadTab() {
     try {
       await downloadService.addDownload(url.trim());
       setUrl('');
-      Alert.alert('Success', 'Download started! Check the Library tab to see progress.');
+      const message = settings.autoDownload 
+        ? 'Download started! Check the Library tab to see progress.'
+        : 'URL added to pending! Go to Library > Pending to start the download.';
+      Alert.alert('Success', message);
       loadDownloads();
     } catch (error) {
       Alert.alert('Error', error instanceof Error ? error.message : 'Failed to start download');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMultipleDownload = async () => {
+    if (!urls.trim()) {
+      Alert.alert('Error', 'Please enter URLs (one per line)');
+      return;
+    }
+
+    // Split URLs by newlines and filter out empty lines
+    const urlList = urls
+      .split('\n')
+      .map(u => u.trim())
+      .filter(u => u.length > 0);
+
+    if (urlList.length === 0) {
+      Alert.alert('Error', 'No valid URLs found');
+      return;
+    }
+
+    // Validate all URLs
+    const invalidUrls = urlList.filter(u => !isValidUrl(u));
+    if (invalidUrls.length > 0) {
+      Alert.alert(
+        'Invalid URLs', 
+        `Found ${invalidUrls.length} invalid URL(s):\n${invalidUrls.slice(0, 3).join('\n')}${invalidUrls.length > 3 ? '\n...' : ''}`
+      );
+      return;
+    }
+
+    setIsLoading(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      // Process URLs sequentially to avoid overwhelming the backend
+      for (const singleUrl of urlList) {
+        try {
+          await downloadService.addDownload(singleUrl);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to download ${singleUrl}:`, error);
+          failCount++;
+        }
+      }
+
+      setUrls('');
+      
+      if (successCount > 0) {
+        const statusText = settings.autoDownload ? 'Started' : 'Added to pending';
+        const actionText = settings.autoDownload 
+          ? 'Check the Library tab to see progress.'
+          : 'Go to Library > Pending to start downloads.';
+        Alert.alert(
+          'Batch Download', 
+          `${statusText} ${successCount} download(s)${failCount > 0 ? ` (${failCount} failed)` : ''}. ${actionText}`
+        );
+      } else {
+        Alert.alert('Error', 'All downloads failed to start');
+      }
+      
+      loadDownloads();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to process batch download');
     } finally {
       setIsLoading(false);
     }
@@ -86,9 +164,6 @@ export default function DownloadTab() {
     );
   };
 
-  const openUrl = (url: string) => {
-    Linking.openURL(url);
-  };
 
   const getStatusColor = (status: DownloadItem['status']) => {
     switch (status) {
@@ -113,6 +188,8 @@ export default function DownloadTab() {
     }
   };
 
+  const styles = createStyles(theme);
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView 
@@ -122,7 +199,14 @@ export default function DownloadTab() {
         }
       >
         <View style={styles.header}>
-          <Text style={styles.title}>Mindful Media</Text>
+          <View style={styles.titleRow}>
+            <Image 
+              source={require('../../assets/images/icon.png')} 
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <Text style={styles.title}>Temperance</Text>
+          </View>
           <Text style={styles.subtitle}>
             "Be still and know that I am God" - Psalm 46:10
           </Text>
@@ -132,26 +216,79 @@ export default function DownloadTab() {
         </View>
 
         <View style={styles.inputSection}>
-          <Text style={styles.label}>Paste URL</Text>
-          <TextInput
-            style={styles.input}
-            value={url}
-            onChangeText={setUrl}
-            placeholder="https://www.youtube.com/watch?v=..."
-            placeholderTextColor="#9ca3af"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-          />
+          <View style={styles.modeToggle}>
+            <Text style={styles.label}>Download Mode</Text>
+            <View style={styles.toggleButtons}>
+              <TouchableOpacity
+                style={[styles.toggleButton, !isMultipleMode && styles.toggleButtonActive]}
+                onPress={() => setIsMultipleMode(false)}
+              >
+                <Text style={[styles.toggleButtonText, !isMultipleMode && styles.toggleButtonTextActive]}>
+                  Single URL
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.toggleButton, isMultipleMode && styles.toggleButtonActive]}
+                onPress={() => setIsMultipleMode(true)}
+              >
+                <Text style={[styles.toggleButtonText, isMultipleMode && styles.toggleButtonTextActive]}>
+                  Multiple URLs
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {!isMultipleMode ? (
+            // Single URL input
+            <>
+              <Text style={styles.label}>Paste URL</Text>
+              <TextInput
+                style={styles.input}
+                value={url}
+                onChangeText={setUrl}
+                placeholder="https://www.youtube.com/watch?v=..."
+                placeholderTextColor="#9ca3af"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+            </>
+          ) : (
+            // Multiple URLs input
+            <>
+              <Text style={styles.label}>Paste URLs (one per line)</Text>
+              <TextInput
+                style={styles.multilineInput}
+                value={urls}
+                onChangeText={setUrls}
+                placeholder={`https://www.youtube.com/watch?v=...
+https://www.instagram.com/p/...
+https://www.tiktok.com/@user/video/...`}
+                placeholderTextColor="#9ca3af"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                multiline
+                numberOfLines={6}
+                textAlignVertical="top"
+              />
+              <Text style={styles.multilineHint}>
+                📝 {urls.split('\n').filter(u => u.trim()).length} URLs detected
+              </Text>
+            </>
+          )}
           
           <TouchableOpacity
             style={[styles.downloadButton, isLoading && styles.downloadButtonDisabled]}
             onPress={handleDownload}
             disabled={isLoading}
           >
-            <Download size={20} color="#ffffff" />
+            <Download size={20} color={theme.colors.primaryText} />
             <Text style={styles.downloadButtonText}>
-              {isLoading ? 'Starting Download...' : 'Download'}
+              {isLoading 
+                ? (isMultipleMode ? 'Starting Downloads...' : 'Starting Download...') 
+                : (isMultipleMode ? 'Download All' : 'Download')
+              }
             </Text>
           </TouchableOpacity>
         </View>
@@ -159,7 +296,7 @@ export default function DownloadTab() {
         <View style={styles.supportedPlatforms}>
           <Text style={styles.sectionTitle}>Supported Platforms</Text>
           <View style={styles.platformGrid}>
-            {['YouTube', 'Instagram', 'TikTok'].map((platform) => (
+            {['YouTube', 'Instagram', 'TikTok', 'Facebook', 'X/Twitter', 'LinkedIn', 'Pinterest', 'Podcasts'].map((platform) => (
               <View key={platform} style={styles.platformChip}>
                 <Text style={styles.platformText}>{platform}</Text>
               </View>
@@ -170,21 +307,56 @@ export default function DownloadTab() {
         {downloads.length > 0 && (
           <View style={styles.recentDownloads}>
             <Text style={styles.sectionTitle}>Recent Downloads</Text>
-            {downloads.slice(0, 5).map((item) => (
+            {downloads
+              .sort((a, b) => {
+                const dateA = a.downloadedAt ? new Date(a.downloadedAt).getTime() : 0;
+                const dateB = b.downloadedAt ? new Date(b.downloadedAt).getTime() : 0;
+                return dateB - dateA; // Most recent first
+              })
+              .slice(0, 5)
+              .map((item) => (
               <View key={item.id} style={styles.downloadItem}>
                 <View style={styles.downloadInfo}>
-                  <Text style={styles.platformName}>
-                    {item.title || formatPlatformName(item.platform)}
-                  </Text>
+                  <View style={styles.downloadHeader}>
+                    <Text style={styles.platformName} numberOfLines={1}>
+                      {item.title || formatPlatformName(item.platform)}
+                    </Text>
+                    <View style={styles.platformBadge}>
+                      <Text style={styles.platformBadgeText}>
+                        {formatPlatformName(item.platform)}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  {item.isPlaylist && item.playlistItems && (
+                    <Text style={styles.playlistIndicator}>
+                      📁 {item.playlistItems.length} items in playlist
+                    </Text>
+                  )}
+                  
                   <Text style={styles.downloadTime}>
                     {item.downloadedAt 
-                      ? new Date(item.downloadedAt).toLocaleString()
+                      ? `Downloaded ${new Date(item.downloadedAt).toLocaleDateString()}`
                       : 'In progress...'
                     }
                   </Text>
+                  
                   {item.status === 'downloading' && (
-                    <Text style={styles.progressText}>
-                      Progress: {item.progress}%
+                    <View style={styles.progressContainer}>
+                      <View style={styles.progressBar}>
+                        <View 
+                          style={[styles.progressFill, { width: `${Math.round(item.progress || 0)}%` }]} 
+                        />
+                      </View>
+                      <Text style={styles.progressText}>
+                        {Math.round(item.progress || 0)}%
+                      </Text>
+                    </View>
+                  )}
+                  
+                  {item.status === 'completed' && item.fileExtension && (
+                    <Text style={styles.fileInfo}>
+                      📄 {item.fileExtension.toUpperCase()} • {item.contentType}
                     </Text>
                   )}
                 </View>
@@ -201,22 +373,15 @@ export default function DownloadTab() {
                       style={styles.iconButton}
                       onPress={() => Alert.alert('File Path', item.filePath || 'No file path')}
                     >
-                      <Folder size={16} color="#6b7280" />
+                      <Folder size={16} color={theme.colors.text} />
                     </TouchableOpacity>
                   )}
                   
                   <TouchableOpacity
                     style={styles.iconButton}
-                    onPress={() => openUrl(item.url)}
-                  >
-                    <ExternalLink size={16} color="#6b7280" />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={styles.iconButton}
                     onPress={() => handleDeleteDownload(item.id)}
                   >
-                    <Trash2 size={16} color="#ef4444" />
+                    <Trash2 size={16} color={theme.colors.error} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -231,7 +396,7 @@ export default function DownloadTab() {
         )}
 
         <View style={styles.disclaimer}>
-          <AlertCircle size={16} color="#f59e0b" />
+          <AlertCircle size={16} color={theme.colors.warning} />
           <Text style={styles.disclaimerText}>
             This app helps you save content for intentional, offline consumption. 
             Please respect content creators' rights and platform terms of service.
@@ -243,10 +408,10 @@ export default function DownloadTab() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fefce8', // Warm ancient parchment background
+    backgroundColor: theme.colors.background,
   },
   scrollContent: {
     padding: 20,
@@ -255,16 +420,30 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     alignItems: 'center',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#92400e', // Ancient brown/gold color
-    textAlign: 'center',
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 8,
+  },
+  logo: {
+    width: 32,
+    height: 32,
+    marginRight: 12,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: theme.colors.text,
+    textAlign: 'center',
+    marginBottom: 12,
+    letterSpacing: -0.5,
+    textShadowColor: theme.colors.shadow,
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   subtitle: {
     fontSize: 16,
-    color: '#b45309', // Warm golden brown
+    color: theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
     fontStyle: 'italic',
@@ -272,22 +451,23 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 14,
-    color: '#a16207', // Darker golden color
+    color: theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
   },
   inputSection: {
-    backgroundColor: '#fffbeb', // Warm cream background
-    borderRadius: 8, // Less rounded for ancient look
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: '#fbbf24', // Golden border
-    shadowColor: '#92400e',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: theme.colors.surface,
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 28,
+    marginHorizontal: 4,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 10,
   },
   label: {
     fontSize: 16,
@@ -307,22 +487,28 @@ const styles = StyleSheet.create({
   },
   downloadButton: {
     backgroundColor: '#d97706', // Golden brown button
-    borderRadius: 4, // Sharp corners
-    padding: 16,
+    borderRadius: 16, // More rounded
+    padding: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    borderWidth: 2,
-    borderColor: '#92400e',
+    gap: 10,
+    borderWidth: 0,
+    shadowColor: '#d97706',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   downloadButtonDisabled: {
     backgroundColor: '#9ca3af',
+    shadowOpacity: 0,
   },
   downloadButtonText: {
     color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   supportedPlatforms: {
     backgroundColor: '#fffbeb', // Warm cream background
@@ -362,17 +548,17 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   recentDownloads: {
-    backgroundColor: '#fffbeb', // Warm cream background
-    borderRadius: 8,
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: '#fbbf24', // Golden border
-    shadowColor: '#92400e',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: '#ffffff', // Pure white
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 28,
+    marginHorizontal: 4, // For shadow
+    borderWidth: 0,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 10,
   },
   downloadItem: {
     flexDirection: 'row',
@@ -441,5 +627,107 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#92400e',
     lineHeight: 20,
+  },
+  modeToggle: {
+    marginBottom: 16,
+  },
+  toggleButtons: {
+    flexDirection: 'row',
+    marginTop: 8,
+    backgroundColor: '#fffbeb',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#fbbf24',
+    padding: 2,
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  toggleButtonActive: {
+    backgroundColor: '#d97706',
+  },
+  toggleButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#92400e',
+  },
+  toggleButtonTextActive: {
+    color: '#ffffff',
+  },
+  multilineInput: {
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: '#fbbf24',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    minHeight: 120,
+    textAlignVertical: 'top',
+    color: '#451a03',
+  },
+  multilineHint: {
+    fontSize: 12,
+    color: '#d97706',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  downloadHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+    gap: 8,
+  },
+  platformBadge: {
+    backgroundColor: '#fbbf24',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#92400e',
+  },
+  platformBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#451a03',
+  },
+  playlistIndicator: {
+    fontSize: 12,
+    color: '#d97706',
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 8,
+  },
+  progressBar: {
+    flex: 1,
+    height: 4,
+    backgroundColor: '#fef3c7',
+    borderRadius: 2,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#d97706',
+    borderRadius: 2,
+  },
+  progressText: {
+    fontSize: 11,
+    color: '#92400e',
+    fontWeight: '500',
+  },
+  fileInfo: {
+    fontSize: 11,
+    color: '#a16207',
+    marginTop: 4,
+    fontFamily: 'monospace',
   },
 });

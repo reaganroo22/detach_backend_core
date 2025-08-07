@@ -1,0 +1,8 @@
+Playlist Download Summary
+Platform: YOUTUBE
+Source URL: https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI
+Total Items Downloaded: 10
+Total Size: 47.70 MB
+Downloaded: 2025-08-06T20:53:04.284Z
+
+Items:

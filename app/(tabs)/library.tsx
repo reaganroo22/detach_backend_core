@@ -9,25 +9,38 @@ import {
   Alert,
   RefreshControl,
   Clipboard,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Download, Trash2, Folder, Copy, Eye, Headphones, FileText, ImageIcon, Video } from 'lucide-react-native';
-import { downloadService, DownloadItem } from '../../services/downloadService';
+import { Download, Trash2, Folder, Copy, Eye, Headphones, FileText, ImageIcon, Video, FolderPlus, Archive, Edit3, MoreHorizontal } from 'lucide-react-native';
+import { downloadService, DownloadItem, Folder as FolderType } from '../../services/downloadService';
 import EnhancedMediaViewer from '../../components/EnhancedMediaViewer';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export default function LibraryTab() {
-  const [filter, setFilter] = useState<'all' | 'completed' | 'downloading' | 'pending' | 'failed'>('all');
+  const { theme } = useTheme();
+  const [filter, setFilter] = useState<'all' | 'completed' | 'downloading' | 'pending' | 'failed'>('completed');
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
+  const [folders, setFolders] = useState<FolderType[]>([]);
+  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<DownloadItem | null>(null);
   const [mediaViewerVisible, setMediaViewerVisible] = useState(false);
+  const [showOrganizeOptions, setShowOrganizeOptions] = useState(false);
 
   useEffect(() => {
     loadDownloads();
-  }, []);
+  }, [currentFolderId]);
 
   const loadDownloads = () => {
-    setDownloads(downloadService.getDownloads());
+    if (currentFolderId) {
+      // Load downloads from specific folder
+      setDownloads(downloadService.getDownloadsByFolder(currentFolderId));
+    } else {
+      // Load all downloads or downloads not in any folder
+      setDownloads(downloadService.getDownloads());
+    }
+    setFolders(downloadService.getFolders());
   };
 
   const onRefresh = () => {
@@ -36,9 +49,18 @@ export default function LibraryTab() {
     setRefreshing(false);
   };
 
-  const filteredContent = downloads.filter(item => 
-    filter === 'all' || item.status === filter
-  );
+  const filteredContent = downloads.filter(item => {
+    // Filter by status
+    const statusMatch = filter === 'all' || item.status === filter;
+    
+    // Filter by current folder
+    if (currentFolderId) {
+      return statusMatch && item.folderId === currentFolderId;
+    } else {
+      // When viewing "All Downloads", show items not in folders or all items based on filter
+      return statusMatch;
+    }
+  });
 
   const formatDate = (dateString?: string): string => {
     if (!dateString) return 'In progress...';
@@ -68,11 +90,11 @@ export default function LibraryTab() {
 
   const getStatusColor = (status: DownloadItem['status']) => {
     switch (status) {
-      case 'completed': return '#dcfce7';
-      case 'downloading': return '#bfdbfe';
-      case 'pending': return '#fef3c7';
-      case 'failed': return '#fecaca';
-      default: return '#f3f4f6';
+      case 'completed': return theme.colors.surface;
+      case 'downloading': return theme.colors.primary + '20'; // primary with opacity
+      case 'pending': return theme.colors.textTertiary + '30'; // tertiary with opacity
+      case 'failed': return theme.colors.error + '20'; // error with opacity
+      default: return theme.colors.border;
     }
   };
 
@@ -94,17 +116,32 @@ export default function LibraryTab() {
     );
   };
 
-  const handleClearAll = async () => {
+  const handleClearCategory = async (category: 'all' | 'completed' | 'downloading' | 'pending' | 'failed') => {
+    const categoryName = category === 'all' ? 'All Downloads' : `${category.charAt(0).toUpperCase() + category.slice(1)} Downloads`;
+    const itemsToDelete = category === 'all' ? downloads : downloads.filter(d => d.status === category);
+    
+    if (itemsToDelete.length === 0) {
+      Alert.alert('Nothing to Clear', `No ${category === 'all' ? '' : category + ' '}downloads found.`);
+      return;
+    }
+    
     Alert.alert(
-      'Clear All Downloads',
-      'Are you sure you want to clear all downloads? This will delete all local files.',
+      `Clear ${categoryName}`,
+      `Are you sure you want to clear ${itemsToDelete.length} ${category === 'all' ? '' : category + ' '}download(s)? This will delete local files.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Clear All',
+          text: `Clear ${itemsToDelete.length}`,
           style: 'destructive',
           onPress: async () => {
-            await downloadService.clearAllDownloads();
+            if (category === 'all') {
+              await downloadService.clearAllDownloads();
+            } else {
+              // Delete individual items by category
+              for (const item of itemsToDelete) {
+                await downloadService.deleteDownload(item.id);
+              }
+            }
             loadDownloads();
           },
         },
@@ -139,15 +176,15 @@ export default function LibraryTab() {
   const getContentTypeIcon = (contentType: DownloadItem['contentType']) => {
     switch (contentType) {
       case 'audio':
-        return <Headphones size={16} color="#92400e" />; // Ancient brown
+        return <Headphones size={16} color={theme.colors.primary} />;
       case 'video':
-        return <Video size={16} color="#92400e" />; // Ancient brown
+        return <Video size={16} color={theme.colors.primary} />;
       case 'image':
-        return <ImageIcon size={16} color="#92400e" />; // Ancient brown
+        return <ImageIcon size={16} color={theme.colors.primary} />;
       case 'text':
-        return <FileText size={16} color="#92400e" />; // Ancient brown
+        return <FileText size={16} color={theme.colors.primary} />;
       default:
-        return <Eye size={16} color="#92400e" />; // Ancient brown
+        return <Eye size={16} color={theme.colors.primary} />;
     }
   };
 
@@ -160,29 +197,196 @@ export default function LibraryTab() {
     }
   };
 
+  const handleCreateFolder = () => {
+    Alert.prompt(
+      'Create Folder',
+      'Enter a name for your new folder:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Create', 
+          onPress: async (folderName) => {
+            if (folderName && folderName.trim()) {
+              try {
+                const folderId = await downloadService.createFolder(folderName.trim());
+                loadDownloads();
+                setShowOrganizeOptions(false);
+                Alert.alert(
+                  'Folder Created!', 
+                  `"${folderName.trim()}" folder has been created. You can now organize your downloads here.`,
+                  [{ text: 'OK' }]
+                );
+              } catch (error) {
+                Alert.alert('Error', 'Failed to create folder. Please try again.');
+              }
+            } else {
+              Alert.alert('Invalid Name', 'Please enter a valid folder name.');
+            }
+          }
+        }
+      ],
+      'plain-text',
+      'My Folder'
+    );
+  };
+
+  const handleStartDownload = async (itemId: string) => {
+    try {
+      await downloadService.startDownload(itemId);
+      loadDownloads(); // Refresh the list
+    } catch (error) {
+      Alert.alert('Error', 'Failed to start download');
+    }
+  };
+
+  const handleMoveToFolder = (downloadId: string) => {
+    const folderOptions = [
+      { text: 'All Downloads', onPress: () => moveItemToFolder(downloadId, undefined) },
+      ...folders.map(folder => ({
+        text: folder.name,
+        onPress: () => moveItemToFolder(downloadId, folder.id)
+      })),
+      { text: 'Cancel', style: 'cancel' as const }
+    ];
+
+    Alert.alert('Move to Folder', 'Choose where to move this download:', folderOptions);
+  };
+
+  const moveItemToFolder = async (downloadId: string, folderId?: string) => {
+    try {
+      await downloadService.moveToFolder(downloadId, folderId);
+      loadDownloads();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to move item to folder.');
+    }
+  };
+
+  const handleDeleteFolder = (folderId: string) => {
+    const folder = folders.find(f => f.id === folderId);
+    Alert.alert(
+      'Delete Folder',
+      `Are you sure you want to delete "${folder?.name}"? All items will be moved to All Downloads.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await downloadService.deleteFolder(folderId);
+            setCurrentFolderId(undefined);
+            loadDownloads();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRenameFolder = (folderId: string) => {
+    const folder = folders.find(f => f.id === folderId);
+    Alert.prompt(
+      'Rename Folder',
+      'Enter a new name for this folder:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Rename', 
+          onPress: async (newName) => {
+            if (newName && newName.trim()) {
+              await downloadService.renameFolder(folderId, newName.trim());
+              loadDownloads();
+            }
+          }
+        }
+      ],
+      'plain-text',
+      folder?.name || ''
+    );
+  };
+
+  const handleFolderMenu = (folderId: string) => {
+    const folder = folders.find(f => f.id === folderId);
+    Alert.alert(
+      folder?.name || 'Folder',
+      'Choose an action:',
+      [
+        { text: 'Rename', onPress: () => handleRenameFolder(folderId) },
+        { text: 'Delete', style: 'destructive', onPress: () => handleDeleteFolder(folderId) },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
+  };
+
+  const styles = createStyles(theme);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Your Library</Text>
-        <Text style={styles.subtitle}>
-          {downloads.length} downloads • {downloads.filter(d => d.status === 'completed').length} completed
-        </Text>
-        {downloads.length > 0 && (
-          <TouchableOpacity style={styles.clearButton} onPress={handleClearAll}>
-            <Text style={styles.clearButtonText}>Clear All</Text>
-          </TouchableOpacity>
-        )}
+        <View style={styles.headerMain}>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>
+              {currentFolderId 
+                ? folders.find(f => f.id === currentFolderId)?.name || 'Folder'
+                : 'Your Library'
+              }
+            </Text>
+            {currentFolderId && (
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => setCurrentFolderId(undefined)}
+              >
+                <Text style={styles.backButtonText}>← All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={styles.subtitle}>
+            {filteredContent.length} downloads • {filteredContent.filter(d => d.status === 'completed').length} completed
+          </Text>
+        </View>
+        <View style={styles.headerActions}>
+          {filteredContent.length > 0 && (
+            <TouchableOpacity 
+              style={styles.organizeButton} 
+              onPress={() => setShowOrganizeOptions(!showOrganizeOptions)}
+            >
+              <FolderPlus size={16} color={theme.colors.primaryText} />
+              <Text style={styles.organizeButtonText}>Organize</Text>
+            </TouchableOpacity>
+          )}
+          {filteredContent.length > 0 && (
+            <TouchableOpacity 
+              style={styles.clearButton} 
+              onPress={() => handleClearCategory(filter)}
+            >
+              <Text style={styles.clearButtonText}>
+                Clear {filter === 'all' ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
+      
+      {showOrganizeOptions && (
+        <View style={styles.organizeOptions}>
+          <Text style={styles.organizeTitle}>Create Custom Folder</Text>
+          <Text style={styles.organizeSubtitle}>
+            Create a custom folder to organize your downloads by topic, category, or any way you'd like.
+          </Text>
+          <TouchableOpacity style={styles.createFolderButton} onPress={handleCreateFolder}>
+            <FolderPlus size={20} color={theme.colors.primaryText} />
+            <Text style={styles.createFolderButtonText}>Create New Folder</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <View style={styles.filterSection}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.filterButtons}>
             {[
-              { key: 'all', label: 'All', count: downloads.length },
               { key: 'completed', label: 'Completed', count: downloads.filter(d => d.status === 'completed').length },
               { key: 'downloading', label: 'Downloading', count: downloads.filter(d => d.status === 'downloading').length },
               { key: 'pending', label: 'Pending', count: downloads.filter(d => d.status === 'pending').length },
               { key: 'failed', label: 'Failed', count: downloads.filter(d => d.status === 'failed').length },
+              { key: 'all', label: 'All', count: downloads.length },
             ].map((filterOption) => (
               <TouchableOpacity
                 key={filterOption.key}
@@ -214,15 +418,50 @@ export default function LibraryTab() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Folders Section - Only show when not in a specific folder AND on completed tab */}
+        {!currentFolderId && folders.length > 0 && filter === 'completed' && (
+          <View style={styles.foldersSection}>
+            <Text style={styles.sectionTitle}>Folders</Text>
+            <View style={styles.foldersGrid}>
+              {folders.map((folder) => (
+                <TouchableOpacity
+                  key={folder.id}
+                  style={styles.folderCard}
+                  onPress={() => setCurrentFolderId(folder.id)}
+                >
+                  <View style={styles.folderHeader}>
+                    <Folder size={20} color={theme.colors.primary} />
+                    <TouchableOpacity
+                      style={styles.folderMenuButton}
+                      onPress={() => handleFolderMenu(folder.id)}
+                    >
+                      <MoreHorizontal size={16} color={theme.colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.folderName} numberOfLines={2}>
+                    {folder.name}
+                  </Text>
+                  <Text style={styles.folderCount}>
+                    {folder.itemCount} {folder.itemCount === 1 ? 'item' : 'items'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Downloads Section */}
         {filteredContent.length === 0 ? (
           <View style={styles.emptyState}>
-            <Download size={64} color="#a16207" /> {/* Darker golden color */}
+            <Download size={64} color={theme.colors.textSecondary} />
             <Text style={styles.emptyTitle}>
               {downloads.length === 0 ? 'No Downloads Yet' : `No ${filter} Downloads`}
             </Text>
             <Text style={styles.emptySubtitle}>
               {downloads.length === 0 
                 ? 'Download content from the Download tab to build your mindful library'
+                : filter === 'pending'
+                ? 'No pending downloads. Turn off Auto Download in Settings to queue URLs before downloading.'
                 : `No downloads with ${filter} status found`
               }
             </Text>
@@ -247,6 +486,14 @@ export default function LibraryTab() {
                   <Text style={styles.contentTitle} numberOfLines={2}>
                     {item.title || 'Untitled'}
                   </Text>
+                  
+                  {item.isPlaylist && item.playlistItems && (
+                    <Text style={styles.playlistInfo}>
+                      📁 {item.playlistItems.length} items downloaded
+                    </Text>
+                  )}
+                  {/* Debug: Show if item has playlist properties */}
+                  
                   <Text style={styles.downloadDate}>
                     {item.downloadedAt ? `Downloaded ${formatDate(item.downloadedAt)}` : 'In progress...'}
                   </Text>
@@ -262,14 +509,38 @@ export default function LibraryTab() {
                     </View>
                   )}
                   
-                  {item.filePath && (
+                  {item.filePath && !item.isPlaylist && (
                     <Text style={styles.filePath} numberOfLines={1}>
                       File: {item.filePath?.split('/').pop() || 'Unknown'}
                     </Text>
                   )}
+                  
+                  {item.isPlaylist && item.playlistItems && item.playlistItems.length > 0 && (
+                    <View style={styles.playlistPreview}>
+                      {item.playlistItems.slice(0, 3).map((playlistItem, index) => (
+                        <Text key={index} style={styles.playlistItemPreview} numberOfLines={1}>
+                          • {playlistItem.title}
+                        </Text>
+                      ))}
+                      {item.playlistItems.length > 3 && (
+                        <Text style={styles.playlistItemPreview}>
+                          + {item.playlistItems.length - 3} more items
+                        </Text>
+                      )}
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.contentActions}>
+                  {item.status === 'pending' && (
+                    <TouchableOpacity 
+                      style={styles.actionButton}
+                      onPress={() => handleStartDownload(item.id)}
+                    >
+                      <Download size={16} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                  )}
+                  
                   {item.status === 'completed' && item.filePath && (
                     <TouchableOpacity 
                       style={styles.actionButton}
@@ -284,22 +555,29 @@ export default function LibraryTab() {
                       style={styles.actionButton}
                       onPress={() => handleViewFile(item)}
                     >
-                      <Folder size={16} color="#451a03" /> {/* Dark brown */}
+                      <Folder size={16} color={theme.colors.textSecondary} />
                     </TouchableOpacity>
                   )}
                   
                   <TouchableOpacity 
                     style={styles.actionButton}
+                    onPress={() => handleMoveToFolder(item.id)}
+                  >
+                    <Archive size={16} color={theme.colors.textSecondary} />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.actionButton}
                     onPress={() => handleCopyLink(item.url)}
                   >
-                    <Copy size={16} color="#451a03" /> {/* Dark brown */}
+                    <Copy size={16} color={theme.colors.text} />
                   </TouchableOpacity>
                   
                   <TouchableOpacity 
                     style={styles.actionButton}
                     onPress={() => handleDeleteDownload(item.id)}
                   >
-                    <Trash2 size={16} color="#ef4444" />
+                    <Trash2 size={16} color={theme.colors.error} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -319,29 +597,56 @@ export default function LibraryTab() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fefce8', // Warm ancient parchment background
+    backgroundColor: theme.colors.background,
   },
   header: {
     padding: 20,
     paddingBottom: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  headerMain: {
+    flex: 1,
+    marginRight: 16,
+  },
+  headerActions: {
+    flexDirection: 'column',
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  organizeButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: theme.colors.text,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+  },
+  organizeButtonText: {
+    color: theme.colors.primaryText,
+    fontSize: 12,
+    fontWeight: '600',
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#92400e', // Ancient brown/gold color
-    marginBottom: 4,
-    flex: 1,
+    fontSize: 32,
+    fontWeight: '800',
+    color: theme.colors.text,
+    marginBottom: 6,
+    letterSpacing: -0.5,
+    textShadowColor: theme.colors.shadow,
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   subtitle: {
     fontSize: 16,
-    color: '#a16207', // Darker golden color
-    flex: 1,
+    color: theme.colors.textSecondary,
   },
   clearButton: {
     backgroundColor: '#ef4444',
@@ -414,16 +719,17 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   contentCard: {
-    backgroundColor: '#fffbeb', // Warm cream background
-    borderRadius: 8, // Less rounded for ancient look
-    padding: 16,
-    borderWidth: 2,
-    borderColor: '#fbbf24', // Golden border
-    shadowColor: '#92400e',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: '#ffffff', // Pure white for better contrast
+    borderRadius: 16, // More modern rounded corners
+    padding: 20,
+    marginHorizontal: 4, // Add slight margin for shadow
+    borderWidth: 0, // Remove border for cleaner look
+    borderColor: 'transparent',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 8,
   },
   contentHeader: {
     flexDirection: 'row',
@@ -513,5 +819,131 @@ const styles = StyleSheet.create({
     borderColor: '#92400e', // Ancient brown border
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  playlistInfo: {
+    fontSize: 14,
+    color: '#d97706', // Golden brown color
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  playlistPreview: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#fffbeb', // Warm cream background
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#fbbf24', // Golden border
+  },
+  playlistItemPreview: {
+    fontSize: 12,
+    color: '#92400e', // Ancient brown text
+    lineHeight: 16,
+    marginBottom: 2,
+  },
+  organizeOptions: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 8,
+    margin: 20,
+    marginTop: 0,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#fbbf24',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  organizeTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#92400e',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  organizeSubtitle: {
+    fontSize: 14,
+    color: '#a16207',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  createFolderButton: {
+    backgroundColor: '#d97706',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#d97706',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  createFolderButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    backgroundColor: '#fbbf24',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#92400e',
+  },
+  backButtonText: {
+    color: '#451a03',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  foldersSection: {
+    marginBottom: 20,
+  },
+  foldersGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  folderCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    width: '47%',
+    minHeight: 100,
+    borderWidth: 2,
+    borderColor: '#fbbf24',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  folderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  folderMenuButton: {
+    padding: 4,
+  },
+  folderName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#451a03',
+    marginBottom: 4,
+  },
+  folderCount: {
+    fontSize: 12,
+    color: '#a16207',
   },
 });

@@ -210,7 +210,7 @@ app.post('/api/youtube', async (req, res) => {
   }
 });
 
-// YouTube download endpoint using yt-dlp (alternative method)
+// YouTube download endpoint using yt-dlp (direct download method)
 app.post('/api/youtube-ytdlp', async (req, res) => {
   try {
     const { url, format = 'audio' } = req.body;
@@ -219,17 +219,21 @@ app.post('/api/youtube-ytdlp', async (req, res) => {
       return res.status(400).json({ error: 'URL is required' });
     }
 
-    // First, get video info (title, duration, etc.)
+    console.log('YouTube: Processing URL:', url);
+    console.log('YouTube: Requested format:', format);
+
+    // First, get detailed video info using JSON output
     const infoProcess = spawn('python3', ['-m', 'yt_dlp',
-      '--print', '%(title)s|%(duration)s|%(uploader)s|%(view_count)s',
+      '--dump-json',
+      '--no-warnings',
       url
     ]);
 
-    let videoInfo = '';
+    let contentInfo = '';
     let infoError = '';
 
     infoProcess.stdout.on('data', (data) => {
-      videoInfo += data.toString();
+      contentInfo += data.toString();
     });
 
     infoProcess.stderr.on('data', (data) => {
@@ -240,46 +244,98 @@ app.post('/api/youtube-ytdlp', async (req, res) => {
       infoProcess.on('close', resolve);
     });
 
-    const [title, duration, uploader, viewCount] = videoInfo.trim().split('|');
+    console.log('YouTube raw contentInfo:', contentInfo.substring(0, 200) + '...');
 
-    // Then get download URL based on format preference
+    let parsedInfo;
+    try {
+      parsedInfo = JSON.parse(contentInfo.trim());
+    } catch (e) {
+      console.error('YouTube: Failed to parse JSON info:', e);
+      throw new Error('Could not get video information');
+    }
+
+    const title = parsedInfo.title || 'YouTube Content';
+    const duration = parsedInfo.duration;
+    const uploader = parsedInfo.uploader || parsedInfo.channel;
+    const viewCount = parsedInfo.view_count;
+
+    console.log('YouTube parsed:', {
+      title: title.substring(0, 50) + '...',
+      duration,
+      uploader,
+      viewCount
+    });
+
+    // Generate filename
+    const safeTitle = title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    const timestamp = Date.now();
+    const extension = format === 'video' ? 'mp4' : 'm4a';
+    const filename = `${safeTitle}_${timestamp}.${extension}`;
+    const outputPath = path.join(__dirname, 'downloads', filename);
+
+    // Ensure downloads directory exists
+    const downloadsDir = path.join(__dirname, 'downloads');
+    if (!await fs.access(downloadsDir).then(() => true).catch(() => false)) {
+      await fs.mkdir(downloadsDir, { recursive: true });
+    }
+
+    // Download based on format preference
     const formatString = format === 'video' 
       ? 'best[height<=720][ext=mp4]/best[ext=mp4]/best'
       : 'bestaudio[ext=m4a]/bestaudio';
 
-    const ytdlp = spawn('python3', ['-m', 'yt_dlp',
-      '--get-url',
+    console.log('YouTube: Starting download with format:', formatString);
+
+    const ytdlpProcess = spawn('python3', ['-m', 'yt_dlp',
       '--format', formatString,
+      '--output', outputPath,
+      '--no-warnings',
       url
     ]);
 
-    let downloadUrl = '';
+    let downloadOutput = '';
     let errorOutput = '';
 
-    ytdlp.stdout.on('data', (data) => {
-      downloadUrl += data.toString();
+    ytdlpProcess.stdout.on('data', (data) => {
+      downloadOutput += data.toString();
     });
 
-    ytdlp.stderr.on('data', (data) => {
+    ytdlpProcess.stderr.on('data', (data) => {
       errorOutput += data.toString();
     });
 
-    ytdlp.on('close', (code) => {
-      if (code === 0 && downloadUrl.trim()) {
-        res.json({
-          success: true,
-          downloadUrl: downloadUrl.trim(),
-          platform: 'youtube',
-          title: title || 'YouTube Video',
-          duration: duration ? parseInt(duration) : undefined,
-          uploader: uploader || undefined,
-          viewCount: viewCount ? parseInt(viewCount) : undefined,
-          contentType: format
-        });
+    ytdlpProcess.on('close', async (code) => {
+      console.log('YouTube: yt-dlp exit code:', code);
+      console.log('YouTube: stdout:', downloadOutput.substring(0, 500) + '...');
+      console.log('YouTube: stderr:', errorOutput.substring(0, 500) + '...');
+      
+      if (code === 0) {
+        try {
+          // Check if file exists and get its stats
+          const stats = await fs.stat(outputPath);
+          
+          res.json({
+            success: true,
+            title: title,
+            uploader: uploader,
+            viewCount: viewCount,
+            duration: duration,
+            contentType: format,
+            filePath: outputPath,
+            filename: filename,
+            fileSize: stats.size
+          });
+        } catch (error) {
+          console.error('YouTube: File not found after download:', error);
+          res.status(500).json({ 
+            error: 'Download completed but file not found',
+            details: error.message 
+          });
+        }
       } else {
-        console.error('yt-dlp error:', errorOutput);
+        console.error('YouTube: yt-dlp failed with code:', code);
         res.status(500).json({ 
-          error: 'Failed to get download URL',
+          error: 'Failed to download YouTube content',
           details: errorOutput
         });
       }
@@ -1539,15 +1595,13 @@ app.post('/api/playlist', async (req, res) => {
         '--playlist-end', maxItems.toString()
       ]);
     } else {
-      // Use yt-dlp for all other platforms
+      // Use yt-dlp for all other platforms  
       downloadProcess = spawn('python3', ['-m', 'yt_dlp',
-        '--extract-flat', 'false',
         '--format', platformFormat,
         '--output', outputTemplate,
         '--playlist-end', maxItems.toString(),
-        '--no-warnings',
+        '--no-warnings', 
         '--print-json',
-        '--write-info-json',
         url
       ]);
     }
@@ -1822,6 +1876,137 @@ Downloaded: ${new Date().toISOString()}`;
   }
 });
 
+// Pinterest download endpoint - using yt-dlp with direct download
+app.post('/api/pinterest', async (req, res) => {
+  try {
+    const { url, format = 'image' } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+
+    console.log('Pinterest: Processing URL:', url);
+    
+    // First, get content info
+    const infoProcess = spawn('python3', ['-m', 'yt_dlp',
+      '--print', '%(title)s|%(uploader)s|%(description)s',
+      '--no-warnings',
+      url
+    ]);
+
+    let contentInfo = '';
+    let infoError = '';
+
+    infoProcess.stdout.on('data', (data) => {
+      contentInfo += data.toString();
+    });
+
+    infoProcess.stderr.on('data', (data) => {
+      infoError += data.toString();
+    });
+
+    await new Promise((resolve) => {
+      infoProcess.on('close', resolve);
+    });
+
+    const [title, uploader, description] = contentInfo.trim().split('|');
+    
+    // Generate filename - Pinterest is primarily images
+    const safeTitle = (title || 'Pinterest_Pin').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    const timestamp = Date.now();
+    const extension = 'jpg'; // Pinterest content is typically images
+    const filename = `${safeTitle}_${timestamp}.${extension}`;
+    const outputPath = path.join(__dirname, 'downloads', filename);
+
+    // Ensure downloads directory exists
+    const downloadsDir = path.join(__dirname, 'downloads');
+    if (!await fs.access(downloadsDir).then(() => true).catch(() => false)) {
+      await fs.mkdir(downloadsDir, { recursive: true });
+    }
+
+    // Download file directly with yt-dlp
+    console.log('Pinterest: Starting download...');
+    const ytdlp = spawn('python3', ['-m', 'yt_dlp',
+      '--output', outputPath,
+      '--format', 'best', // Pinterest images
+      '--no-warnings',
+      url
+    ]);
+
+    let errorOutput = '';
+    let stdOutput = '';
+
+    ytdlp.stdout.on('data', (data) => {
+      stdOutput += data.toString();
+    });
+
+    ytdlp.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+
+    ytdlp.on('close', async (code) => {
+      console.log('Pinterest: yt-dlp exit code:', code);
+      console.log('Pinterest: stdout:', stdOutput);
+      console.log('Pinterest: stderr:', errorOutput);
+      
+      if (code === 0) {
+        try {
+          // Check if file was created and get its info
+          const stats = await fs.stat(outputPath);
+          
+          res.json({
+            success: true,
+            filePath: outputPath,
+            filename: filename,
+            fileSize: stats.size,
+            platform: 'pinterest',
+            title: title || 'Pinterest Pin',
+            uploader: uploader || undefined,
+            description: description || undefined,
+            contentType: 'image'
+          });
+        } catch (fileError) {
+          console.error('Pinterest file check error:', fileError);
+          res.status(500).json({ 
+            error: 'File was not created successfully',
+            details: fileError.message,
+            suggestions: 'The download may have failed due to Pinterest restrictions'
+          });
+        }
+      } else {
+        console.error('Pinterest yt-dlp error:', errorOutput);
+        
+        let errorMessage = 'Pinterest download failed';
+        let suggestions = 'Try again later or use a different URL';
+        
+        if (errorOutput.includes('403') || errorOutput.includes('Forbidden')) {
+          errorMessage = 'Pinterest pin access denied';
+          suggestions = 'This pin may be private, deleted, or Pinterest is blocking downloads. Try a different public pin.';
+        } else if (errorOutput.includes('404') || errorOutput.includes('not found')) {
+          errorMessage = 'Pinterest pin not found';
+          suggestions = 'The pin may have been deleted or the URL is incorrect.';
+        } else if (errorOutput.includes('rate') || errorOutput.includes('limit')) {
+          errorMessage = 'Pinterest rate limit reached';
+          suggestions = 'Please wait a few minutes before trying again.';
+        }
+        
+        res.status(500).json({ 
+          error: errorMessage,
+          details: errorOutput,
+          suggestions: suggestions
+        });
+      }
+    });
+
+  } catch (error) {
+    console.error('Pinterest download error:', error);
+    res.status(500).json({ 
+      error: 'Failed to process Pinterest URL',
+      details: error.message 
+    });
+  }
+});
+
 // 404 handler - must be last
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
@@ -1840,6 +2025,7 @@ const server = app.listen(PORT, () => {
   console.log('  POST /api/twitter - Download Twitter/X videos and posts');
   console.log('  POST /api/facebook - Download Facebook videos');
   console.log('  POST /api/linkedin - Download LinkedIn videos and posts');
+  console.log('  POST /api/pinterest - Download Pinterest images');
   console.log('  POST /api/podcast - Download RSS podcast feeds/episodes');
   console.log('  POST /api/playlist - Download bulk playlists/shows (YouTube, YouTube Music, Apple Podcasts, Spotify)');
 });
