@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Clipboard,
   TextInput,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Download, Trash2, Folder, Copy, Eye, Headphones, FileText, ImageIcon, Video, FolderPlus, Archive, Edit3, MoreHorizontal } from 'lucide-react-native';
@@ -151,9 +152,31 @@ export default function LibraryTab() {
 
   const handleViewFile = (item: DownloadItem) => {
     if (item.filePath) {
-      Alert.alert('File Location', item.filePath, [
-        { text: 'OK', style: 'default' },
-      ]);
+      Alert.alert(
+        'File Location', 
+        item.filePath, 
+        [
+          { text: 'Copy Path', onPress: () => Clipboard.setString(item.filePath || '') },
+          { 
+            text: 'View in Files', 
+            onPress: async () => {
+              try {
+                // On iOS, use the file:// URL to open in Files app
+                const fileUrl = item.filePath;
+                const canOpen = await Linking.canOpenURL(fileUrl);
+                if (canOpen) {
+                  await Linking.openURL(fileUrl);
+                } else {
+                  Alert.alert('Cannot Open', 'Unable to open file in Files app');
+                }
+              } catch (error) {
+                Alert.alert('Error', 'Failed to open file location');
+              }
+            }
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
     } else {
       Alert.alert('No File', 'File not available');
     }

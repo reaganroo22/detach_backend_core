@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   downloadFormat: 'audio',
   audioQuality: 'high',
   videoQuality: 'medium',
-  autoDownload: false,
+  autoDownload: true,
   darkMode: false,
   notifications: true,
   storageLocation: 'default',

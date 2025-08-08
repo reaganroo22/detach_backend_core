@@ -9,6 +9,8 @@ export const API_CONFIG = {
   ENDPOINTS: {
     HEALTH: '/api/health',
     YOUTUBE: '/api/youtube',
+    YOUTUBE_MUSIC: '/api/youtube-music',
+    SPOTIFY: '/api/spotify',
     INSTAGRAM: '/api/instagram',
     TIKTOK: '/api/tiktok',
     TWITTER: '/api/twitter',

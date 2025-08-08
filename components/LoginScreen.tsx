@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,18 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as AppleAuthentication from 'expo-apple-authentication';
+// Conditional import for Expo Go compatibility
+let GoogleSigninButton;
+try {
+  const googleSignInModule = require('@react-native-google-signin/google-signin');
+  GoogleSigninButton = googleSignInModule.GoogleSigninButton;
+} catch (error) {
+  console.warn('Google Sign-In not available in Expo Go');
+}
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import GoogleIcon from './icons/GoogleIcon';
@@ -19,6 +29,15 @@ export default function LoginScreen() {
   const { theme } = useTheme();
   const [googleLoading, setGoogleLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
+  const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
+
+  useEffect(() => {
+    const checkAppleAuthAvailability = async () => {
+      const isAvailable = await AppleAuthentication.isAvailableAsync();
+      setAppleAuthAvailable(isAvailable);
+    };
+    checkAppleAuthAvailability();
+  }, []);
 
   const handleGoogleSignIn = async () => {
     try {
@@ -84,16 +103,30 @@ export default function LoginScreen() {
       width: '100%',
       maxWidth: 320,
     },
-    // Apple button - official black design
+    // Apple button wrapper for size control
+    appleButtonWrapper: {
+      width: '100%',
+      height: 50,
+      marginBottom: 20,
+      overflow: 'hidden',
+      borderRadius: 8,
+    },
+    // Apple button - native button styling
     appleButton: {
+      width: '100%',
+      height: '100%',
+    },
+    // Apple button fallback for when native isn't available
+    appleButtonFallback: {
       backgroundColor: '#000000',
       paddingHorizontal: 24,
       paddingVertical: 16,
-      borderRadius: 8, // Apple uses slightly rounded corners
+      borderRadius: 8,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: 12,
+      marginBottom: 20,
+      height: 50,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.2,
@@ -110,8 +143,22 @@ export default function LoginScreen() {
       marginLeft: 10,
       fontFamily: 'SF Pro Display', // Apple's official font
     },
-    // Google button - official white design with border
+    // Google button wrapper for size control
+    googleButtonWrapper: {
+      width: '100%',
+      height: 50,
+      marginBottom: 20,
+      overflow: 'hidden',
+      borderRadius: 8,
+    },
+    // Google button - native button styling  
     googleButton: {
+      width: '100%',
+      height: 50,
+      transform: [{ scaleX: 1.0 }], // Force scaling if needed
+    },
+    // Google button fallback for Expo Go
+    googleButtonFallback: {
       backgroundColor: '#FFFFFF',
       paddingHorizontal: 24,
       paddingVertical: 16,
@@ -122,6 +169,7 @@ export default function LoginScreen() {
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: 20,
+      height: 50,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.1,
@@ -181,41 +229,68 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.loginSection}>
-        <TouchableOpacity
-          style={[
-            styles.appleButton,
-            appleLoading && styles.appleButtonDisabled,
-          ]}
-          onPress={handleAppleSignIn}
-          disabled={appleLoading || googleLoading}
-        >
-          {appleLoading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <>
-              <AppleIcon size={18} color="#FFFFFF" />
-              <Text style={styles.appleButtonText}>Sign in with Apple</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Apple Sign-In Button */}
+        {Platform.OS === 'ios' && appleAuthAvailable ? (
+          <View style={styles.appleButtonWrapper}>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={8}
+              style={[styles.appleButton, appleLoading && styles.appleButtonDisabled]}
+              onPress={handleAppleSignIn}
+              disabled={appleLoading || googleLoading}
+            />
+          </View>
+        ) : Platform.OS === 'ios' ? (
+          <TouchableOpacity
+            style={[
+              styles.appleButtonFallback,
+              appleLoading && styles.appleButtonDisabled,
+            ]}
+            onPress={handleAppleSignIn}
+            disabled={appleLoading || googleLoading}
+          >
+            {appleLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <AppleIcon size={18} color="#FFFFFF" />
+                <Text style={styles.appleButtonText}>Sign in with Apple</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : null}
 
-        <TouchableOpacity
-          style={[
-            styles.googleButton,
-            googleLoading && styles.googleButtonDisabled,
-          ]}
-          onPress={handleGoogleSignIn}
-          disabled={googleLoading || appleLoading}
-        >
-          {googleLoading ? (
-            <ActivityIndicator color="#3c4043" size="small" />
-          ) : (
-            <>
-              <GoogleIcon size={18} />
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Google Sign-In Button */}
+        {GoogleSigninButton ? (
+          <View style={styles.googleButtonWrapper}>
+            <GoogleSigninButton
+              size={GoogleSigninButton.Size.Wide}
+              color={GoogleSigninButton.Color.Light}
+              onPress={handleGoogleSignIn}
+              disabled={googleLoading || appleLoading}
+              style={[styles.googleButton, googleLoading && styles.googleButtonDisabled]}
+            />
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[
+              styles.googleButtonFallback,
+              googleLoading && styles.googleButtonDisabled,
+            ]}
+            onPress={handleGoogleSignIn}
+            disabled={googleLoading || appleLoading}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color="#3c4043" size="small" />
+            ) : (
+              <>
+                <GoogleIcon size={18} />
+                <Text style={styles.googleButtonText}>Continue with Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
 
         <Text style={styles.signInRequiredText}>
           Sign in is required to sync your downloads across devices and access cloud features.

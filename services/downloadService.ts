@@ -15,7 +15,7 @@ export interface DownloadItem {
   id: string;
   url: string;
   title: string;
-  platform: 'youtube' | 'instagram' | 'tiktok' | 'twitter' | 'podcast' | 'facebook' | 'linkedin' | 'pinterest';
+  platform: 'youtube' | 'youtube-music' | 'spotify' | 'instagram' | 'tiktok' | 'twitter' | 'podcast' | 'facebook' | 'linkedin' | 'pinterest';
   status: 'pending' | 'downloading' | 'completed' | 'failed';
   progress: number;
   filePath?: string;
@@ -104,9 +104,9 @@ class DownloadService {
 
   private detectPlatform(url: string): DownloadItem['platform'] | null {
     // Detect platforms - treat everything as individual content (no playlists)
-    if (url.includes('music.youtube.com')) return 'youtube'; // YouTube Music uses same endpoint
+    if (url.includes('music.youtube.com')) return 'youtube-music';
     if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
-    if (url.includes('open.spotify.com')) return 'youtube'; // Route Spotify through YouTube for now
+    if (url.includes('open.spotify.com')) return 'spotify';
     if (url.includes('instagram.com')) return 'instagram';
     if (url.includes('tiktok.com')) return 'tiktok';
     if (url.includes('twitter.com') || url.includes('x.com')) return 'twitter';
@@ -243,6 +243,12 @@ class DownloadService {
       switch (item.platform) {
         case 'youtube':
           downloadData = await this.getYouTubeDownloadUrl(item.url);
+          break;
+        case 'youtube-music':
+          downloadData = await this.getYouTubeMusicDownloadUrl(item.url);
+          break;
+        case 'spotify':
+          downloadData = await this.getSpotifyDownloadUrl(item.url);
           break;
         case 'instagram':
           downloadData = await this.getInstagramDownloadUrl(item.url);
@@ -484,6 +490,58 @@ class DownloadService {
       }
       
       return null;
+    }
+  }
+
+  private async getYouTubeMusicDownloadUrl(url: string): Promise<{url: string, metadata: any} | null> {
+    try {
+      const settings = settingsService.getSettings();
+      const format = settings.downloadFormat; // 'audio' or 'video'
+      
+      console.log('Attempting YouTube Music download:', { url, format, endpoint: getApiUrl(API_CONFIG.ENDPOINTS.YOUTUBE_MUSIC) });
+      
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.YOUTUBE_MUSIC), { 
+        url,
+        format 
+      }, {
+        timeout: 60000, // 60 second timeout
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      console.log('YouTube Music API response:', response.status, response.data);
+      return { url: response.data.downloadUrl, metadata: response.data };
+      
+    } catch (error) {
+      console.error('YouTube Music download failed:', error);
+      throw new Error('Could not get download URL');
+    }
+  }
+
+  private async getSpotifyDownloadUrl(url: string): Promise<{url: string, metadata: any} | null> {
+    try {
+      const settings = settingsService.getSettings();
+      const format = settings.downloadFormat; // 'audio' or 'video'
+      
+      console.log('Attempting Spotify download:', { url, format, endpoint: getApiUrl(API_CONFIG.ENDPOINTS.SPOTIFY) });
+      
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.SPOTIFY), { 
+        url,
+        format 
+      }, {
+        timeout: 60000, // 60 second timeout
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      console.log('Spotify API response:', response.status, response.data);
+      return { url: response.data.downloadUrl, metadata: response.data };
+      
+    } catch (error) {
+      console.error('Spotify download failed:', error);
+      throw new Error('Could not get download URL');
     }
   }
 

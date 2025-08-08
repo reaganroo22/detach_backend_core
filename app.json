@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "detach",
+    "name": "Detach",
     "slug": "detach",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,9 +8,36 @@
     "scheme": "com.temperance.app",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "description": "Save content locally for intentional, prayerful consumption. Practice digital minimalism with offline access to your favorite content.",
+    "privacy": "public",
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.temperance.app"
+      "bundleIdentifier": "com.temperance.app",
+      "buildNumber": "1",
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app does not use the camera",
+        "NSMicrophoneUsageDescription": "This app does not use the microphone",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "com.temperance.app",
+            "CFBundleURLSchemes": [
+              "com.temperance.app"
+            ]
+          },
+          {
+            "CFBundleURLName": "com.temperance.app",
+            "CFBundleURLSchemes": [
+              "com.temperance.app"
+            ]
+          }
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "web": {
       "bundler": "metro",
@@ -22,10 +49,23 @@
       "expo-font",
       "expo-web-browser",
       "expo-video",
-      "expo-audio"
+      "expo-audio",
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.853021963659-e42d9v8klqddiibodqm2bids30c3tftr"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "abecb6f0-6244-47bc-8cbf-aa28191846a5"
+      }
     }
   }
 }

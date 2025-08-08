@@ -1,5 +1,16 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
+import { Alert, Platform } from 'react-native';
+import * as AppleAuthentication from 'expo-apple-authentication';
+// Conditional import for Expo Go compatibility
+let GoogleSignin, statusCodes;
+try {
+  const googleSignInModule = require('@react-native-google-signin/google-signin');
+  GoogleSignin = googleSignInModule.GoogleSignin;
+  statusCodes = googleSignInModule.statusCodes;
+} catch (error) {
+  console.warn('Google Sign-In not available in Expo Go');
+}
 import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
@@ -27,6 +38,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Configure Google Sign-In (only if available)
+    if (GoogleSignin) {
+      GoogleSignin.configure({
+        webClientId: '853021963659-e42d9v8klqddiibodqm2bids30c3tftr.apps.googleusercontent.com',
+        iosClientId: '853021963659-e42d9v8klqddiibodqm2bids30c3tftr.apps.googleusercontent.com',
+        offlineAccess: true,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -47,38 +69,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGoogle = async () => {
+    if (!GoogleSignin || !statusCodes) {
+      throw new Error('Google Sign-In requires a development build. This feature is not available in Expo Go.');
+    }
+
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: 'com.temperance.app://auth',
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        },
-      });
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
       
-      if (error) throw error;
-    } catch (error) {
-      console.error('Error signing in with Google:', error);
-      throw error;
+      if (userInfo.data?.idToken) {
+        const { data, error } = await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token: userInfo.data.idToken,
+        });
+        
+        if (error) {
+          throw error;
+        }
+        console.log('Google Sign-In successful:', data);
+      } else {
+        throw new Error('No ID token present!');
+      }
+    } catch (error: any) {
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        throw new Error('Sign in was cancelled');
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        throw new Error('Sign in already in progress');
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        throw new Error('Google Play services not available');
+      } else {
+        console.error('Error signing in with Google:', error);
+        throw error;
+      }
     }
   };
 
   const signInWithApple = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'apple',
-        options: {
-          redirectTo: 'com.temperance.app://auth',
-        },
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
       });
-      
-      if (error) throw error;
-    } catch (error) {
-      console.error('Error signing in with Apple:', error);
-      throw error;
+
+      // Sign in via Supabase Auth.
+      if (credential.identityToken) {
+        const {
+          error,
+          data: { user },
+        } = await supabase.auth.signInWithIdToken({
+          provider: 'apple',
+          token: credential.identityToken,
+        });
+        
+        console.log(JSON.stringify({ error, user }, null, 2));
+        
+        if (error) {
+          throw error;
+        }
+        // User is signed in.
+      } else {
+        throw new Error('No identityToken.');
+      }
+    } catch (error: any) {
+      if (error.code === 'ERR_REQUEST_CANCELED') {
+        throw new Error('Sign in was cancelled');
+      } else {
+        console.error('Error signing in with Apple:', error);
+        throw error;
+      }
     }
   };
 
