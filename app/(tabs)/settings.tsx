@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { 
   Bell, 
   Download, 
@@ -24,7 +25,9 @@ import {
   Video,
   Settings,
   Upload,
-  Archive
+  Archive,
+  LogOut,
+  User
 } from 'lucide-react-native';
 import { settingsService, AppSettings } from '../../services/settingsService';
 import { downloadService } from '../../services/downloadService';
@@ -32,6 +35,7 @@ import { backupService } from '../../services/backupService';
 
 export default function SettingsTab() {
   const { theme, settings } = useTheme();
+  const { user, signOut } = useAuth();
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
 
   useEffect(() => {
@@ -144,9 +148,30 @@ export default function SettingsTab() {
     );
   };
 
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out? You will need to sign in again to access your synced content.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Sign Out', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          }
+        },
+      ]
+    );
+  };
+
   const handleAppInfo = () => {
     Alert.alert(
-      'Temperance',
+      'Detach',
       `Version 1.0.0
 
 Built for intentional living and spiritual growth.
@@ -281,6 +306,25 @@ Backend service required for downloading functionality.`,
       ],
     },
     {
+      title: 'Account',
+      items: [
+        {
+          icon: User,
+          title: 'Signed in as',
+          subtitle: user?.email || 'Unknown',
+          hasArrow: false,
+        },
+        {
+          icon: LogOut,
+          title: 'Sign Out',
+          subtitle: 'You will need to sign in again to access synced content',
+          hasArrow: true,
+          isDestructive: true,
+          onPress: handleSignOut,
+        },
+      ],
+    },
+    {
       title: 'About',
       items: [
         {
@@ -349,7 +393,7 @@ Backend service required for downloading functionality.`,
                   </View>
 
                   <View style={styles.settingAction}>
-                    {item.toggle !== undefined ? (
+                    {'toggle' in item && item.toggle !== undefined ? (
                       <Switch
                         value={item.toggle}
                         onValueChange={item.onToggle}

@@ -946,4 +946,10 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 12,
     color: '#a16207',
   },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#451a03',
+    marginBottom: 12,
+  },
 });

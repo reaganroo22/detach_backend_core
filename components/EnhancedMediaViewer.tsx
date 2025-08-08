@@ -208,21 +208,42 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
 
       console.log('Loading audio from path:', item.filePath);
       
-      // Check if file exists
-      const fileInfo = await FileSystem.getInfoAsync(item.filePath!);
-      console.log('Audio file info:', fileInfo);
+      // Check if this is a server URL or local file
+      const isServerUrl = item.filePath?.startsWith('http://') || item.filePath?.startsWith('https://');
       
-      if (!fileInfo.exists) {
-        throw new Error('Audio file does not exist');
+      if (!isServerUrl) {
+        // For local files, check if file exists
+        const fileInfo = await FileSystem.getInfoAsync(item.filePath!);
+        console.log('Audio file info:', fileInfo);
+        
+        if (!fileInfo.exists) {
+          throw new Error('Audio file does not exist');
+        }
+      } else {
+        console.log('Loading audio from server URL - skipping local file check');
       }
 
       // Simple approach - just create the audio with a short timeout and show the UI
       console.log('Creating audio sound...');
       
+      // Set audio mode for better podcast/streaming audio playback
+      if (isServerUrl) {
+        console.log('Setting audio mode for podcast playback...');
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          staysActiveInBackground: true,
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+      }
+      
       try {
-        // Try to create the audio with a 3-second timeout
+        // Use longer timeout for server URLs, shorter for local files
+        const timeoutDuration = isServerUrl ? 15000 : 3000;
+        
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Audio creation timeout')), 3000);
+          setTimeout(() => reject(new Error('Audio creation timeout')), timeoutDuration);
         });
         
         const audioPromise = Audio.Sound.createAsync(
@@ -576,9 +597,34 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
           </Text>
           <TouchableOpacity 
             style={styles.showFileButton}
-            onPress={() => Alert.alert('File Location', item.filePath || 'File path not available')}
+            onPress={() => {
+              if (item.filePath) {
+                if (item.filePath.startsWith('http://') || item.filePath.startsWith('https://')) {
+                  // For server URLs, open in browser
+                  import('expo-linking').then(Linking => {
+                    Linking.openURL(item.filePath!);
+                  });
+                } else {
+                  // For local files, try to open with system app
+                  import('expo-intent-launcher').then(IntentLauncher => {
+                    IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+                      data: item.filePath!,
+                      flags: 1,
+                    }).catch(() => {
+                      // Fallback to showing path if opening fails
+                      Alert.alert('File Location', item.filePath || 'File path not available');
+                    });
+                  }).catch(() => {
+                    // If expo-intent-launcher is not available, show path
+                    Alert.alert('File Location', item.filePath || 'File path not available');
+                  });
+                }
+              } else {
+                Alert.alert('Error', 'File path not available');
+              }
+            }}
           >
-            <Text style={styles.showFileButtonText}>Show File Path</Text>
+            <Text style={styles.showFileButtonText}>Open File</Text>
           </TouchableOpacity>
         </View>
       )}

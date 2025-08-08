@@ -1,17 +1,42 @@
+import React from 'react';
 import { Tabs } from 'expo-router';
 import { Download, Archive, Settings } from 'lucide-react-native';
+import { useAuth } from '../../contexts/AuthContext';
+import LoginScreen from '../../components/LoginScreen';
+import { ActivityIndicator, View } from 'react-native';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export default function TabLayout() {
+  const { session, loading } = useAuth();
+  const { theme } = useTheme();
+
+  if (loading) {
+    return (
+      <View style={{ 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        backgroundColor: '#fffbeb' // Laudate theme background
+      }}>
+        <ActivityIndicator size="large" color="#d97706" />
+      </View>
+    );
+  }
+
+  if (!session) {
+    return <LoginScreen />;
+  }
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#2563eb',
-        tabBarInactiveTintColor: '#6b7280',
+        tabBarActiveTintColor: '#d97706', // Laudate theme active color
+        tabBarInactiveTintColor: '#92400e', // Laudate theme inactive color
         tabBarStyle: {
-          backgroundColor: '#ffffff',
-          borderTopWidth: 1,
-          borderTopColor: '#e5e7eb',
+          backgroundColor: '#fffbeb', // Laudate theme background
+          borderTopWidth: 2,
+          borderTopColor: '#fbbf24', // Laudate theme border
         },
       }}>
       <Tabs.Screen

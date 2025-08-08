@@ -2,6 +2,7 @@ import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { settingsService } from './settingsService';
+import { getApiUrl, getFileUrl, API_CONFIG } from '../config/api';
 
 export interface Folder {
   id: string;
@@ -306,32 +307,47 @@ class DownloadService {
       }, 500);
 
       console.log('Starting download from URL:', downloadUrl);
-      console.log('Saving to path:', filePath);
       
-      const downloadResult = await FileSystem.downloadAsync(
-        downloadUrl,
-        filePath,
-        {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      // For audio files (especially podcasts), use server URL directly instead of downloading locally
+      if (item.contentType === 'audio') {
+        console.log('Audio file detected - using server URL for better streaming performance');
+        
+        // Clear the progress interval
+        clearInterval(progressInterval);
+        
+        item.status = 'completed';
+        item.progress = 100;
+        item.filePath = downloadUrl; // Use server URL directly for audio
+        item.downloadedAt = new Date().toISOString();
+      } else {
+        // For videos and images, download locally
+        console.log('Saving to path:', filePath);
+        
+        const downloadResult = await FileSystem.downloadAsync(
+          downloadUrl,
+          filePath,
+          {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
           }
-        }
-      );
-      
-      console.log('Download result:', downloadResult);
-      
-      // Check if file was actually downloaded
-      const fileInfo = await FileSystem.getInfoAsync(filePath);
-      console.log('Downloaded file info:', fileInfo);
+        );
+        
+        console.log('Download result:', downloadResult);
+        
+        // Check if file was actually downloaded
+        const fileInfo = await FileSystem.getInfoAsync(filePath);
+        console.log('Downloaded file info:', fileInfo);
 
-      // Clear the progress interval
-      clearInterval(progressInterval);
+        // Clear the progress interval
+        clearInterval(progressInterval);
 
-      item.status = 'completed';
-      item.progress = 100;
-      // Use downloadResult.uri if available, otherwise use the original filePath
-      item.filePath = downloadResult?.uri || filePath;
-      item.downloadedAt = new Date().toISOString();
+        item.status = 'completed';
+        item.progress = 100;
+        // Use downloadResult.uri if available, otherwise use the original filePath
+        item.filePath = downloadResult?.uri || filePath;
+        item.downloadedAt = new Date().toISOString();
+      }
       
       this.downloads.set(id, item);
       await this.saveDownloadsToStorage();
@@ -349,7 +365,7 @@ class DownloadService {
       const settings = settingsService.getSettings();
       const format = settings.downloadFormat; // 'audio' or 'video'
       
-      const response = await axios.post('http://192.168.1.239:3003/api/youtube-ytdlp', { 
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.YOUTUBE), { 
         url,
         format 
       });
@@ -358,7 +374,7 @@ class DownloadService {
       if (response.data.filePath) {
         // For videos, download to local device storage for better compatibility
         if (response.data.contentType === 'video') {
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           const localPath = `${this.downloadDirectory}${response.data.filename}`;
           
           // Download file to local storage for better video playback
@@ -381,7 +397,7 @@ class DownloadService {
           } catch (localDownloadError) {
             console.error('Failed to download YouTube video locally, using server URL:', localDownloadError);
             // Fallback to server URL
-            const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+            const fileUrl = getFileUrl(response.data.filename);
             return {
               url: fileUrl,
               metadata: {
@@ -396,7 +412,7 @@ class DownloadService {
           }
         } else {
           // For audio, use server URL directly
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           return {
             url: fileUrl,
             metadata: {
@@ -433,7 +449,7 @@ class DownloadService {
       const settings = settingsService.getSettings();
       const format = settings.downloadFormat; // 'audio' or 'video'
       
-      const response = await axios.post('http://192.168.1.239:3003/api/instagram', { 
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.INSTAGRAM), { 
         url,
         format 
       });
@@ -442,7 +458,7 @@ class DownloadService {
       if (response.data.filePath) {
         // For videos, download to local device storage for better compatibility
         if (response.data.contentType === 'video') {
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           const localPath = `${this.downloadDirectory}${response.data.filename}`;
           
           // Download file to local storage for better video playback
@@ -465,7 +481,7 @@ class DownloadService {
           } catch (localDownloadError) {
             console.error('Failed to download Instagram video locally, using server URL:', localDownloadError);
             // Fallback to server URL
-            const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+            const fileUrl = getFileUrl(response.data.filename);
             return {
               url: fileUrl,
               metadata: {
@@ -480,7 +496,7 @@ class DownloadService {
           }
         } else {
           // For non-videos (images), use server URL directly
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           return {
             url: fileUrl,
             metadata: {
@@ -529,7 +545,7 @@ class DownloadService {
       const settings = settingsService.getSettings();
       const format = settings.downloadFormat; // 'audio' or 'video'
       
-      const response = await axios.post('http://192.168.1.239:3003/api/tiktok', { 
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.TIKTOK), { 
         url,
         format 
       });
@@ -538,7 +554,7 @@ class DownloadService {
       if (response.data.filePath) {
         // For videos, download to local device storage for better compatibility
         if (response.data.contentType === 'video') {
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           const localPath = `${this.downloadDirectory}${response.data.filename}`;
           
           // Download file to local storage for better video playback
@@ -561,7 +577,7 @@ class DownloadService {
           } catch (localDownloadError) {
             console.error('Failed to download TikTok video locally, using server URL:', localDownloadError);
             // Fallback to server URL
-            const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+            const fileUrl = getFileUrl(response.data.filename);
             return {
               url: fileUrl,
               metadata: {
@@ -576,7 +592,7 @@ class DownloadService {
           }
         } else {
           // For non-videos, use server URL directly
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           return {
             url: fileUrl,
             metadata: {
@@ -640,7 +656,7 @@ class DownloadService {
       const settings = settingsService.getSettings();
       const format = settings.downloadFormat; // 'audio' or 'video'
       
-      const response = await axios.post('http://192.168.1.239:3003/api/twitter', { 
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.TWITTER), { 
         url,
         format 
       });
@@ -649,7 +665,7 @@ class DownloadService {
       if (response.data.filePath) {
         // For videos, download to local device storage for better compatibility
         if (response.data.contentType === 'video') {
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           const localPath = `${this.downloadDirectory}${response.data.filename}`;
           
           // Download file to local storage for better video playback
@@ -670,7 +686,7 @@ class DownloadService {
             };
           } catch (localDownloadError) {
             console.error('Failed to download Twitter video locally, using server URL:', localDownloadError);
-            const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+            const fileUrl = getFileUrl(response.data.filename);
             return {
               url: fileUrl,
               metadata: {
@@ -685,7 +701,7 @@ class DownloadService {
           }
         } else {
           // For text posts, use server URL directly
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           return {
             url: fileUrl,
             metadata: {
@@ -707,7 +723,7 @@ class DownloadService {
   private async getPodcastDownloadUrl(url: string): Promise<{url: string, metadata: any} | null> {
     try {
       // All podcast URLs are treated as individual episodes
-      const response = await axios.post(`http://192.168.1.239:3003/api/podcast`, { 
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.PODCAST), { 
         url,
         format: 'audio'
       });
@@ -715,7 +731,7 @@ class DownloadService {
       // Handle single file downloads
       if (response.data.filePath) {
         // For audio, use server URL directly
-        const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+        const fileUrl = getFileUrl(response.data.filename);
         return {
           url: fileUrl,
           metadata: {
@@ -739,7 +755,7 @@ class DownloadService {
       const settings = settingsService.getSettings();
       const format = settings.downloadFormat; // 'audio' or 'video'
       
-      const response = await axios.post('http://192.168.1.239:3003/api/facebook', { 
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.FACEBOOK), { 
         url,
         format 
       });
@@ -748,7 +764,7 @@ class DownloadService {
       if (response.data.filePath) {
         // For videos, download to local device storage for better compatibility
         if (response.data.contentType === 'video') {
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           const localPath = `${this.downloadDirectory}${response.data.filename}`;
           
           try {
@@ -768,7 +784,7 @@ class DownloadService {
             };
           } catch (localDownloadError) {
             console.error('Failed to download Facebook video locally, using server URL:', localDownloadError);
-            const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+            const fileUrl = getFileUrl(response.data.filename);
             return {
               url: fileUrl,
               metadata: {
@@ -783,7 +799,7 @@ class DownloadService {
           }
         } else {
           // For audio, use server URL directly
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           return {
             url: fileUrl,
             metadata: {
@@ -808,7 +824,7 @@ class DownloadService {
       const settings = settingsService.getSettings();
       const format = settings.downloadFormat; // 'audio' or 'video'
       
-      const response = await axios.post('http://192.168.1.239:3003/api/linkedin', { 
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.LINKEDIN), { 
         url,
         format 
       });
@@ -817,7 +833,7 @@ class DownloadService {
       if (response.data.filePath) {
         // For videos, download to local device storage for better compatibility
         if (response.data.contentType === 'video') {
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           const localPath = `${this.downloadDirectory}${response.data.filename}`;
           
           try {
@@ -836,7 +852,7 @@ class DownloadService {
             };
           } catch (localDownloadError) {
             console.error('Failed to download LinkedIn video locally, using server URL:', localDownloadError);
-            const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+            const fileUrl = getFileUrl(response.data.filename);
             return {
               url: fileUrl,
               metadata: {
@@ -850,7 +866,7 @@ class DownloadService {
           }
         } else {
           // For text posts, use server URL directly
-          const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+          const fileUrl = getFileUrl(response.data.filename);
           return {
             url: fileUrl,
             metadata: {
@@ -873,7 +889,7 @@ class DownloadService {
       const settings = settingsService.getSettings();
       const format = settings.downloadFormat; // 'audio' or 'video'
       
-      const response = await axios.post('http://192.168.1.239:3003/api/pinterest', { 
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.PINTEREST), { 
         url,
         format 
       });
@@ -881,7 +897,7 @@ class DownloadService {
       // Check if backend downloaded the file directly
       if (response.data.filePath) {
         // For images, use server URL directly
-        const fileUrl = `http://192.168.1.239:3003/api/file/${response.data.filename}`;
+        const fileUrl = getFileUrl(response.data.filename);
         return {
           url: fileUrl,
           metadata: {

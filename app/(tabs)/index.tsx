@@ -205,7 +205,7 @@ export default function DownloadTab() {
               style={styles.logo}
               resizeMode="contain"
             />
-            <Text style={styles.title}>Temperance</Text>
+            <Text style={styles.title}>Detach</Text>
           </View>
           <Text style={styles.subtitle}>
             "Be still and know that I am God" - Psalm 46:10
@@ -719,7 +719,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     backgroundColor: '#d97706',
     borderRadius: 2,
   },
-  progressText: {
+  progressTextSmall: {
     fontSize: 11,
     color: '#92400e',
     fontWeight: '500',
