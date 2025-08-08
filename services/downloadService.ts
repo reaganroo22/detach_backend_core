@@ -104,7 +104,9 @@ class DownloadService {
 
   private detectPlatform(url: string): DownloadItem['platform'] | null {
     // Detect platforms - treat everything as individual content (no playlists)
+    if (url.includes('music.youtube.com')) return 'youtube'; // YouTube Music uses same endpoint
     if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
+    if (url.includes('open.spotify.com')) return 'youtube'; // Route Spotify through YouTube for now
     if (url.includes('instagram.com')) return 'instagram';
     if (url.includes('tiktok.com')) return 'tiktok';
     if (url.includes('twitter.com') || url.includes('x.com')) return 'twitter';
@@ -209,11 +211,29 @@ class DownloadService {
     return id;
   }
 
+  private async testBackendConnectivity(): Promise<boolean> {
+    try {
+      const response = await axios.get(getApiUrl(API_CONFIG.ENDPOINTS.HEALTH), {
+        timeout: 5000
+      });
+      return response.status === 200;
+    } catch (error) {
+      console.error('Backend connectivity test failed:', error);
+      return false;
+    }
+  }
+
   async startDownload(id: string) {
     const item = this.downloads.get(id);
     if (!item) return;
 
     try {
+      // Test backend connectivity first
+      const isBackendOnline = await this.testBackendConnectivity();
+      if (!isBackendOnline) {
+        throw new Error('Backend server is currently unavailable. Please check your internet connection and try again later.');
+      }
+
       item.status = 'downloading';
       this.downloads.set(id, item);
       await this.saveDownloadsToStorage();
@@ -365,10 +385,19 @@ class DownloadService {
       const settings = settingsService.getSettings();
       const format = settings.downloadFormat; // 'audio' or 'video'
       
+      console.log('Attempting YouTube download:', { url, format, endpoint: getApiUrl(API_CONFIG.ENDPOINTS.YOUTUBE) });
+      
       const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.YOUTUBE), { 
         url,
         format 
+      }, {
+        timeout: 60000, // 60 second timeout
+        headers: {
+          'Content-Type': 'application/json',
+        }
       });
+      
+      console.log('YouTube API response:', response.status, response.data);
       
       // Check if backend downloaded the file directly
       if (response.data.filePath) {
@@ -438,8 +467,22 @@ class DownloadService {
           }
         };
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('YouTube download failed:', error);
+      
+      // Log detailed error information
+      if (error.response) {
+        console.error('Response error:', {
+          status: error.response.status,
+          data: error.response.data,
+          headers: error.response.headers
+        });
+      } else if (error.request) {
+        console.error('Request error:', error.request);
+      } else {
+        console.error('Error message:', error.message);
+      }
+      
       return null;
     }
   }
