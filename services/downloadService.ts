@@ -1112,6 +1112,22 @@ class DownloadService {
         new Date(b.downloadedAt || 0).getTime() - new Date(a.downloadedAt || 0).getTime()
       );
   }
+
+  async updateTitle(downloadId: string, newTitle: string): Promise<boolean> {
+    const download = this.downloads.get(downloadId);
+    if (!download) return false;
+
+    // Validate title (must be non-empty and reasonable length)
+    const trimmedTitle = newTitle.trim();
+    if (!trimmedTitle || trimmedTitle.length > 200) {
+      return false;
+    }
+
+    download.title = trimmedTitle;
+    this.downloads.set(downloadId, download);
+    await this.saveDownloadsToStorage();
+    return true;
+  }
 }
 
 export const downloadService = new DownloadService();

@@ -326,6 +326,35 @@ export default function LibraryTab() {
     );
   };
 
+  const handleEditTitle = (downloadId: string) => {
+    const download = downloads.find(d => d.id === downloadId);
+    if (!download) return;
+
+    Alert.prompt(
+      'Edit Title',
+      'Enter a new title for this download:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Save', 
+          onPress: async (newTitle) => {
+            if (newTitle && newTitle.trim()) {
+              const success = await downloadService.updateTitle(downloadId, newTitle.trim());
+              if (success) {
+                loadDownloads();
+                Alert.alert('Success', 'Title updated successfully!');
+              } else {
+                Alert.alert('Error', 'Failed to update title. Please try again.');
+              }
+            }
+          }
+        }
+      ],
+      'plain-text',
+      download.title
+    );
+  };
+
   const handleFolderMenu = (folderId: string) => {
     const folder = folders.find(f => f.id === folderId);
     Alert.alert(
@@ -581,6 +610,13 @@ export default function LibraryTab() {
                       <Folder size={16} color={theme.colors.textSecondary} />
                     </TouchableOpacity>
                   )}
+                  
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={() => handleEditTitle(item.id)}
+                  >
+                    <Edit3 size={16} color={theme.colors.primary} />
+                  </TouchableOpacity>
                   
                   <TouchableOpacity 
                     style={styles.actionButton}
