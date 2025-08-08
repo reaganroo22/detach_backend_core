@@ -741,7 +741,11 @@ class DownloadService {
 
     if (item.filePath) {
       try {
-        await FileSystem.deleteAsync(item.filePath);
+        // Only delete local files, not remote URLs
+        if (item.filePath.startsWith('file://') || item.filePath.startsWith('/')) {
+          await FileSystem.deleteAsync(item.filePath);
+        }
+        // For remote URLs, we don't need to delete them - they're hosted remotely
       } catch (error) {
         console.error('Error deleting file:', error);
       }
@@ -1020,7 +1024,11 @@ class DownloadService {
     for (const item of this.downloads.values()) {
       if (item.filePath) {
         try {
-          await FileSystem.deleteAsync(item.filePath);
+          // Only delete local files, not remote URLs
+          if (item.filePath.startsWith('file://') || item.filePath.startsWith('/')) {
+            await FileSystem.deleteAsync(item.filePath);
+          }
+          // For remote URLs, we don't need to delete them - they're hosted remotely
         } catch (error) {
           console.error('Error deleting file:', error);
         }
