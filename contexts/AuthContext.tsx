@@ -38,12 +38,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Configure Google Sign-In (only if available)
+    // Configure Google Sign-In for Supabase integration
     if (GoogleSignin) {
       GoogleSignin.configure({
-        webClientId: '853021963659-e42d9v8klqddiibodqm2bids30c3tftr.apps.googleusercontent.com',
-        iosClientId: '853021963659-e42d9v8klqddiibodqm2bids30c3tftr.apps.googleusercontent.com',
-        offlineAccess: true,
+        webClientId: '853021963659-e42d9v8klqddiibodqm2bids30c3tftr.apps.googleusercontent.com', // Your Google Cloud Console web client ID
+        iosClientId: '853021963659-e42d9v8klqddiibodqm2bids30c3tftr.apps.googleusercontent.com', // Your iOS client ID
+        offlineAccess: false, // No need for offline access with Supabase
       });
     }
   }, []);
@@ -78,6 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userInfo = await GoogleSignin.signIn();
       
       if (userInfo.data?.idToken) {
+        // Use Supabase's native mobile auth with ID token
         const { data, error } = await supabase.auth.signInWithIdToken({
           provider: 'google',
           token: userInfo.data.idToken,

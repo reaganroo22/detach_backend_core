@@ -3,7 +3,7 @@
     "name": "Detach",
     "slug": "detach",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "com.temperance.app",
     "userInterfaceStyle": "automatic",
@@ -22,6 +22,9 @@
       "infoPlist": {
         "NSCameraUsageDescription": "This app does not use the camera",
         "NSMicrophoneUsageDescription": "This app does not use the microphone",
+        "UIBackgroundModes": [
+          "audio"
+        ],
         "CFBundleURLTypes": [
           {
             "CFBundleURLName": "com.temperance.app",
@@ -38,6 +41,12 @@
         ],
         "ITSAppUsesNonExemptEncryption": false
       }
+    },
+    "android": {
+      "permissions": [
+        "WAKE_LOCK",
+        "FOREGROUND_SERVICE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -64,7 +73,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "abecb6f0-6244-47bc-8cbf-aa28191846a5"
+        "projectId": "f4aeaae1-b545-49f1-8745-df515d880d2c"
       }
     }
   }

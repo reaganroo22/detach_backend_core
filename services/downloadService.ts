@@ -753,6 +753,15 @@ class DownloadService {
 
     this.downloads.delete(id);
     await this.saveDownloadsToStorage();
+    
+    // Remove from all playlists
+    try {
+      const { playlistService } = await import('./playlistService');
+      await playlistService.removeFromAllPlaylists(id);
+    } catch (error) {
+      console.error('Error removing download from playlists:', error);
+    }
+    
     return true;
   }
 
@@ -1135,6 +1144,10 @@ class DownloadService {
     this.downloads.set(downloadId, download);
     await this.saveDownloadsToStorage();
     return true;
+  }
+
+  getDownloadById(downloadId: string): DownloadItem | undefined {
+    return this.downloads.get(downloadId);
   }
 }
 

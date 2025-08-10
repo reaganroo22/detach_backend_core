@@ -11,33 +11,39 @@ import {
   Image,
   StatusBar,
 } from 'react-native';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { Video } from 'expo-av';
 import { Audio } from 'expo-av';
-import { useAudioPlayer, AudioSource } from 'expo-audio';
 import { 
   X, 
   Play, 
   Pause, 
   Volume2, 
   VolumeX, 
-  SkipBack, 
-  SkipForward, 
+  FastForward, 
+  Rewind,
+  ChevronLeft,
+  ChevronRight, 
   Maximize,
   Minimize,
   Gauge
 } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system';
-// Removed color matrix filters for production
 import { DownloadItem } from '../services/downloadService';
 import { useTheme } from '../contexts/ThemeContext';
+import BackgroundAudioService from '../services/backgroundAudioService';
 
 interface EnhancedMediaViewerProps {
   item: DownloadItem;
   visible: boolean;
   onClose: () => void;
+  playlist?: DownloadItem[]; // Optional playlist context for continuous playback
+  isPlaylistMode?: boolean; // Explicitly indicate if this is playlist playback
+  onTrackChange?: (newItem: DownloadItem) => void; // Callback for track changes
 }
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const getScreenDimensions = () => Dimensions.get('window');
+const { width: screenWidth, height: screenHeight } = getScreenDimensions();
 
 type PlaybackStatus = {
   isLoaded: boolean;
@@ -48,7 +54,14 @@ type PlaybackStatus = {
   rate?: number;
 };
 
-export default function EnhancedMediaViewer({ item, visible, onClose }: EnhancedMediaViewerProps) {
+export default function EnhancedMediaViewer({ 
+  item, 
+  visible, 
+  onClose, 
+  playlist, 
+  isPlaylistMode = false, 
+  onTrackChange 
+}: EnhancedMediaViewerProps) {
   const { theme } = useTheme();
   const [textContent, setTextContent] = useState('');
   const [imageUri, setImageUri] = useState('');
@@ -57,6 +70,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [showControls, setShowControls] = useState(true);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [dimensions, setDimensions] = useState(getScreenDimensions());
   
   // Playlist states
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState(0);
@@ -69,6 +83,15 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
   const [position, setPosition] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   
+  // Background audio states
+  const [useBackgroundAudio, setUseBackgroundAudio] = useState(false);
+  const [backgroundSound, setBackgroundSound] = useState<Audio.Sound | null>(null);
+  
+  // Playlist management
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const playlistTracks = playlist?.filter(i => (i.contentType === 'audio' || i.contentType === 'video') && i.status === 'completed') || [];
+  const hasPlaylist = isPlaylistMode && playlistTracks.length > 1;
+  
   // Video player states
   const videoRef = useRef<Video>(null);
   const [videoStatus, setVideoStatus] = useState<PlaybackStatus>({ isLoaded: false });
@@ -77,12 +100,72 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
   useEffect(() => {
     if (visible && item && item.filePath) {
       loadContent();
+      // Find current track index in playlist
+      if (hasPlaylist) {
+        const index = playlistTracks.findIndex(track => track.id === item.id);
+        setCurrentTrackIndex(index >= 0 ? index : 0);
+      }
     }
     
     return () => {
       cleanup();
     };
   }, [visible, item?.filePath]);
+
+  // Handle screen rotation and dimensions
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setDimensions(window);
+    });
+    
+    return () => subscription?.remove();
+  }, []);
+
+  // Listen for track end to auto-advance
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    
+    if (useBackgroundAudio && backgroundSound && visible && hasPlaylist) {
+      intervalId = setInterval(async () => {
+        try {
+          const status = await backgroundSound.getStatusAsync();
+          if (status.isLoaded && !status.isPlaying && status.didJustFinish) {
+            playNextTrack();
+          }
+        } catch (error) {
+          console.error('Error checking track end:', error);
+        }
+      }, 1000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [useBackgroundAudio, backgroundSound, visible, hasPlaylist, currentTrackIndex]);
+
+  // Monitor background audio state
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    
+    if (useBackgroundAudio && backgroundSound && visible) {
+      intervalId = setInterval(async () => {
+        try {
+          const status = await backgroundSound.getStatusAsync();
+          if (status.isLoaded) {
+            setIsPlaying(status.isPlaying || false);
+            setPosition(status.positionMillis || 0);
+            setDuration(status.durationMillis || 0);
+          }
+        } catch (error) {
+          console.error('Error updating background audio state:', error);
+        }
+      }, 1000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [useBackgroundAudio, backgroundSound, visible]);
 
   // Auto-hide controls for video
   useEffect(() => {
@@ -104,7 +187,12 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
   }, [showControls, item?.contentType]);
 
   const cleanup = async () => {
-    // Cleanup audio
+    // Cleanup background audio
+    if (useBackgroundAudio) {
+      BackgroundAudioService.stop().catch(console.error);
+    }
+    
+    // Cleanup regular audio
     if (sound) {
       try {
         await sound.unloadAsync();
@@ -140,6 +228,8 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     setIsFullscreen(false);
     setPlaybackRate(1.0);
     setShowControls(true);
+    setUseBackgroundAudio(false);
+    setBackgroundSound(null);
   };
 
   const loadContent = async () => {
@@ -162,7 +252,6 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
           break;
         case 'video':
           console.log('Loading video from path:', item.filePath);
-          // Video loading is handled by the Video component
           setIsLoading(false);
           break;
         case 'image':
@@ -181,65 +270,47 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     }
   };
 
-  const playPlaylistItem = (index: number) => {
-    if (!item.playlistItems || !item.playlistPath) return;
-    
-    const playlistItem = item.playlistItems[index];
-    if (!playlistItem) return;
-    
-    setCurrentPlaylistIndex(index);
-    
-    // Create a path to the individual file
-    const itemPath = `${item.playlistPath}/${playlistItem.filename}`;
-    
-    // For now, we'll show an alert with the item info
-    Alert.alert(
-      'Playing Item',
-      `${playlistItem.title}\n\nThis would play: ${playlistItem.filename}`,
-      [{ text: 'OK' }]
-    );
-  };
-
   const loadAudio = async () => {
     try {
-      if (sound) {
-        await sound.unloadAsync();
-      }
-
-      console.log('Loading audio from path:', item.filePath);
+      // Try to use background audio service first
+      const backgroundAudioSound = await BackgroundAudioService.loadAndPlay(item.filePath!);
+      setBackgroundSound(backgroundAudioSound);
+      setUseBackgroundAudio(true);
+      console.log('Using background audio service');
+    } catch (error) {
+      console.warn('Background audio failed, falling back to regular audio:', error);
+      setUseBackgroundAudio(false);
       
-      // Check if this is a server URL or local file
-      const isServerUrl = item.filePath?.startsWith('http://') || item.filePath?.startsWith('https://');
-      
-      if (!isServerUrl) {
-        // For local files, check if file exists
-        const fileInfo = await FileSystem.getInfoAsync(item.filePath!);
-        console.log('Audio file info:', fileInfo);
-        
-        if (!fileInfo.exists) {
-          throw new Error('Audio file does not exist');
-        }
-      } else {
-        console.log('Loading audio from server URL - skipping local file check');
-      }
-
-      // Simple approach - just create the audio with a short timeout and show the UI
-      console.log('Creating audio sound...');
-      
-      // Set audio mode for better podcast/streaming audio playback
-      if (isServerUrl) {
-        console.log('Setting audio mode for podcast playback...');
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          staysActiveInBackground: true,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-      }
-      
+      // Fallback to regular audio
       try {
-        // Use longer timeout for server URLs, shorter for local files
+        if (sound) {
+          await sound.unloadAsync();
+        }
+
+        console.log('Loading audio from path:', item.filePath);
+        
+        const isServerUrl = item.filePath?.startsWith('http://') || item.filePath?.startsWith('https://');
+        
+        if (!isServerUrl) {
+          const fileInfo = await FileSystem.getInfoAsync(item.filePath!);
+          console.log('Audio file info:', fileInfo);
+          
+          if (!fileInfo.exists) {
+            throw new Error('Audio file does not exist');
+          }
+        }
+
+        if (isServerUrl) {
+          console.log('Setting audio mode for podcast playback...');
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: false,
+            staysActiveInBackground: true,
+            playsInSilentModeIOS: true,
+            shouldDuckAndroid: true,
+            playThroughEarpieceAndroid: false,
+          });
+        }
+        
         const timeoutDuration = isServerUrl ? 15000 : 3000;
         
         const timeoutPromise = new Promise((_, reject) => {
@@ -265,7 +336,6 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
           }
         });
 
-        // Try to get initial status
         try {
           const initialStatus = await newSound.getStatusAsync();
           if (initialStatus.isLoaded) {
@@ -277,17 +347,62 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
 
       } catch (audioError) {
         console.warn('Audio creation failed, showing basic player UI anyway:', audioError);
-        // Still show the player UI even if audio creation fails
         setSound(null);
         setDuration(0);
       }
+    }
+  };
 
+  const playNextTrack = () => {
+    if (!hasPlaylist) return;
+    
+    const nextIndex = (currentTrackIndex + 1) % playlistTracks.length;
+    playTrackAtIndex(nextIndex);
+  };
+
+  const playPreviousTrack = () => {
+    if (!hasPlaylist) return;
+    
+    const prevIndex = currentTrackIndex === 0 ? playlistTracks.length - 1 : currentTrackIndex - 1;
+    playTrackAtIndex(prevIndex);
+  };
+
+  const playTrackAtIndex = async (index: number) => {
+    if (index < 0 || index >= playlistTracks.length) return;
+    
+    const newTrack = playlistTracks[index];
+    setCurrentTrackIndex(index);
+    
+    try {
+      // Stop current track
+      if (useBackgroundAudio) {
+        await BackgroundAudioService.stop();
+      } else if (sound) {
+        await sound.pauseAsync();
+      }
+      
+      // For video content, notify parent to change the track
+      if (newTrack.contentType === 'video') {
+        if (onTrackChange) {
+          onTrackChange(newTrack);
+          return;
+        }
+      }
+      
+      // For audio content with background service, we can switch tracks seamlessly
+      if (newTrack.filePath && newTrack.contentType === 'audio') {
+        if (useBackgroundAudio) {
+          const newSound = await BackgroundAudioService.loadAndPlay(newTrack.filePath);
+          setBackgroundSound(newSound);
+          // Restore playback speed
+          await BackgroundAudioService.setRate(playbackRate);
+        } else {
+          console.warn('Track switching not fully supported with fallback player');
+        }
+      }
     } catch (error) {
-      console.error('Error loading audio:', error);
-      setSound(null);
-      setDuration(0);
-    } finally {
-      setIsLoading(false);
+      console.error('Error switching tracks:', error);
+      Alert.alert('Track Error', 'Failed to switch to the next track');
     }
   };
 
@@ -305,48 +420,64 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
 
   // Audio controls
   const toggleAudioPlayback = async () => {
-    if (!sound) return;
-
     try {
-      if (isPlaying) {
-        await sound.pauseAsync();
-      } else {
-        await sound.playAsync();
+      if (useBackgroundAudio) {
+        if (isPlaying) {
+          await BackgroundAudioService.pause();
+        } else {
+          await BackgroundAudioService.play();
+        }
+      } else if (sound) {
+        if (isPlaying) {
+          await sound.pauseAsync();
+        } else {
+          await sound.playAsync();
+        }
       }
     } catch (error) {
-      console.error('Error toggling audio playback:', error);
+      console.error('Error toggling playback:', error);
+      Alert.alert('Playback Error', 'Failed to control audio playback');
     }
   };
 
   const changeAudioPlaybackRate = async (rate: number) => {
-    if (!sound) return;
-
     try {
-      await sound.setRateAsync(rate, true);
       setPlaybackRate(rate);
+      if (useBackgroundAudio) {
+        await BackgroundAudioService.setRate(rate);
+      } else if (sound) {
+        await sound.setRateAsync(rate, true);
+      }
     } catch (error) {
-      console.error('Error changing audio playback rate:', error);
+      console.error('Error changing playback speed:', error);
+      Alert.alert('Speed Change Error', 'Failed to change playback speed');
     }
   };
 
   const toggleAudioMute = async () => {
-    if (!sound) return;
-
     try {
-      await sound.setIsMutedAsync(!isMuted);
-      setIsMuted(!isMuted);
+      if (useBackgroundAudio) {
+        const newVolume = isMuted ? 1.0 : 0.0;
+        await BackgroundAudioService.setVolume(newVolume);
+        setIsMuted(!isMuted);
+      } else if (sound) {
+        await sound.setIsMutedAsync(!isMuted);
+        setIsMuted(!isMuted);
+      }
     } catch (error) {
-      console.error('Error toggling audio mute:', error);
+      console.error('Error toggling mute:', error);
     }
   };
 
   const seekAudio = async (milliseconds: number) => {
-    if (!sound) return;
-
     try {
-      await sound.setPositionAsync(Math.max(0, Math.min(milliseconds, duration)));
+      if (useBackgroundAudio) {
+        await BackgroundAudioService.setPosition(milliseconds);
+      } else if (sound) {
+        await sound.setPositionAsync(Math.max(0, Math.min(milliseconds, duration)));
+      }
     } catch (error) {
-      console.error('Error seeking audio:', error);
+      console.error('Error seeking:', error);
     }
   };
 
@@ -387,12 +518,26 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     }
   };
 
-  const toggleFullscreen = () => {
-    setIsFullscreen(!isFullscreen);
-    if (!isFullscreen) {
+  const toggleFullscreen = async () => {
+    const newFullscreenState = !isFullscreen;
+    setIsFullscreen(newFullscreenState);
+    
+    if (newFullscreenState) {
+      // Entering fullscreen
       StatusBar.setHidden(true);
+      try {
+        await ScreenOrientation.unlockAsync();
+      } catch (error) {
+        console.log('Screen orientation unlock not supported');
+      }
     } else {
+      // Exiting fullscreen
       StatusBar.setHidden(false);
+      try {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      } catch (error) {
+        console.log('Screen orientation lock not supported');
+      }
     }
   };
 
@@ -400,10 +545,8 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     setShowControls(true);
   };
 
-  // Video status is handled by onLoad and onProgress callbacks
-
   const handlePlaybackRatePress = () => {
-    const rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    const rates = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 3.75, 4.0];
     const currentIndex = rates.indexOf(playbackRate);
     const nextIndex = (currentIndex + 1) % rates.length;
     const newRate = rates[nextIndex];
@@ -425,6 +568,12 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
 
   const handleClose = async () => {
     StatusBar.setHidden(false);
+    // Reset orientation to portrait when closing
+    try {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    } catch (error) {
+      console.log('Screen orientation lock not supported');
+    }
     await cleanup();
     onClose();
   };
@@ -554,7 +703,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
                   onPress={(e) => {
                     if (duration > 0 && videoRef.current) {
                       const { locationX } = e.nativeEvent;
-                      const progressBarWidth = 280; // Approximate width
+                      const progressBarWidth = 280;
                       const seekPercent = locationX / progressBarWidth;
                       const seekTime = seekPercent * duration;
                       videoRef.current.setPositionAsync(Math.max(0, Math.min(seekTime, duration)));
@@ -583,12 +732,42 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
 
   const renderAudioPlayer = () => (
     <View style={styles.audioContainer}>
-      <Text style={styles.mediaTitle}>{getSafeTitle()}</Text>
-      <Text style={styles.mediaSubtitle}>
-        {`${getSafePlatformName()} • Audio`}
+      <Text style={styles.mediaTitle}>
+        {hasPlaylist ? playlistTracks[currentTrackIndex]?.title : getSafeTitle()}
       </Text>
+      <Text style={styles.mediaSubtitle}>
+        {hasPlaylist ? playlistTracks[currentTrackIndex]?.platform : getSafePlatformName()} • {hasPlaylist ? playlistTracks[currentTrackIndex]?.contentType : 'Audio'}
+      </Text>
+      {hasPlaylist && (
+        <Text style={styles.playlistIndicator}>
+          Track {currentTrackIndex + 1} of {playlistTracks.length}
+        </Text>
+      )}
       
-      {!sound && (
+      {/* Playlist Navigation */}
+      {hasPlaylist && (
+        <View style={styles.playlistControls}>
+          <TouchableOpacity 
+            style={[styles.controlButton, currentTrackIndex === 0 && styles.controlButtonDisabled]}
+            onPress={playPreviousTrack}
+            disabled={currentTrackIndex === 0}
+          >
+            <ChevronLeft size={20} color={currentTrackIndex === 0 ? "#a16207" : "#92400e"} />
+            <Text style={[styles.controlLabel, currentTrackIndex === 0 && styles.controlLabelDisabled]}>Prev</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.controlButton, currentTrackIndex === playlistTracks.length - 1 && styles.controlButtonDisabled]}
+            onPress={playNextTrack}
+            disabled={currentTrackIndex === playlistTracks.length - 1}
+          >
+            <ChevronRight size={20} color={currentTrackIndex === playlistTracks.length - 1 ? "#a16207" : "#92400e"} />
+            <Text style={[styles.controlLabel, currentTrackIndex === playlistTracks.length - 1 && styles.controlLabelDisabled]}>Next</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      
+      {!sound && !useBackgroundAudio && (
         <View style={styles.audioErrorContainer}>
           <Text style={styles.audioErrorText}>⚠️ Audio Loading Issue</Text>
           <Text style={styles.audioErrorDescription}>
@@ -600,22 +779,18 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
             onPress={() => {
               if (item.filePath) {
                 if (item.filePath.startsWith('http://') || item.filePath.startsWith('https://')) {
-                  // For server URLs, open in browser
                   import('expo-linking').then(Linking => {
                     Linking.openURL(item.filePath!);
                   });
                 } else {
-                  // For local files, try to open with system app
                   import('expo-intent-launcher').then(IntentLauncher => {
                     IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
                       data: item.filePath!,
                       flags: 1,
                     }).catch(() => {
-                      // Fallback to showing path if opening fails
                       Alert.alert('File Location', item.filePath || 'File path not available');
                     });
                   }).catch(() => {
-                    // If expo-intent-launcher is not available, show path
                     Alert.alert('File Location', item.filePath || 'File path not available');
                   });
                 }
@@ -629,7 +804,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
         </View>
       )}
       
-      {sound && (
+      {(sound || useBackgroundAudio) && (
         <>
           <View style={styles.progressContainer}>
             <View style={styles.progressBar}>
@@ -651,7 +826,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
               style={styles.controlButton} 
               onPress={() => seekAudio(Math.max(0, position - 10000))}
             >
-              <SkipBack size={20} color="#92400e" />
+              <Rewind size={20} color="#92400e" />
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.controlButton} onPress={toggleAudioMute}>
@@ -671,7 +846,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
               style={styles.controlButton} 
               onPress={() => seekAudio(Math.min(duration, position + 10000))}
             >
-              <SkipForward size={20} color="#92400e" />
+              <FastForward size={20} color="#92400e" />
             </TouchableOpacity>
           </View>
         </>
@@ -720,54 +895,6 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
     </View>
   );
 
-  const renderPlaylistViewer = () => {
-    if (!item.playlistItems) return null;
-
-    return (
-      <ScrollView style={styles.playlistContainer}>
-        <View style={styles.playlistHeader}>
-          <Text style={styles.playlistTitle}>
-            📁 Playlist ({item.playlistItems.length} items)
-          </Text>
-          <Text style={styles.playlistSubtitle}>
-            {item.title}
-          </Text>
-        </View>
-        
-        {item.playlistItems.map((playlistItem, index) => (
-          <TouchableOpacity
-            key={index}
-            style={[
-              styles.playlistItem,
-              currentPlaylistIndex === index && styles.playlistItemActive
-            ]}
-            onPress={() => playPlaylistItem(index)}
-          >
-            <View style={styles.playlistItemInfo}>
-              <Text style={styles.playlistItemTitle} numberOfLines={2}>
-                {index + 1}. {playlistItem.title}
-              </Text>
-              {playlistItem.duration && (
-                <Text style={styles.playlistItemDuration}>
-                  {Math.floor(playlistItem.duration / 60)}:
-                  {String(playlistItem.duration % 60).padStart(2, '0')}
-                </Text>
-              )}
-              <Text style={styles.playlistItemFilename} numberOfLines={1}>
-                📄 {playlistItem.filename}
-              </Text>
-            </View>
-            <View style={styles.playlistItemActions}>
-              <TouchableOpacity style={styles.playlistItemButton}>
-                <Play size={16} color="#92400e" />
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    );
-  };
-
   const renderContent = () => {
     if (!item) {
       return (
@@ -775,11 +902,6 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
           <Text style={styles.errorText}>No content available</Text>
         </View>
       );
-    }
-
-    // Handle playlist view
-    if (item.isPlaylist && showPlaylist) {
-      return renderPlaylistViewer();
     }
 
     if (isLoading) {
@@ -827,7 +949,7 @@ export default function EnhancedMediaViewer({ item, visible, onClose }: Enhanced
           {renderContent()}
         </View>
         
-        {isFullscreen && (
+        {isFullscreen && showControls && (
           <TouchableOpacity style={styles.fullscreenCloseButton} onPress={handleClose}>
             <X size={24} color="#ffffff" />
           </TouchableOpacity>
@@ -902,6 +1024,41 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   
+  playlistIndicator: {
+    color: '#92400e', // Laudate brown theme
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 4,
+    textAlign: 'center',
+    backgroundColor: '#fbbf24', // Laudate golden background
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#92400e', // Laudate brown border
+    overflow: 'hidden',
+  },
+  playlistControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 30,
+    gap: 40,
+  },
+  controlLabel: {
+    color: '#92400e',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  controlLabelDisabled: {
+    color: '#a16207', // Laudate muted brown instead of gray
+  },
+  controlButtonDisabled: {
+    opacity: 0.5,
+  },
+  
   // Video Player Styles
   videoContainer: {
     flex: 1,
@@ -919,7 +1076,8 @@ const styles = StyleSheet.create({
   fullscreenVideoWrapper: {
     borderRadius: 0,
     borderWidth: 0,
-    minHeight: screenHeight,
+    minHeight: '100%',
+    width: '100%',
   },
   video: {
     flex: 1,
@@ -997,7 +1155,7 @@ const styles = StyleSheet.create({
   },
   videoProgressFill: {
     height: '100%',
-    backgroundColor: '#d97706',
+    backgroundColor: '#fbbf24',
     borderRadius: 2,
   },
   videoTimeContainer: {
@@ -1008,32 +1166,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#ffffff',
   },
+  videoErrorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  videoErrorText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ef4444',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  videoErrorDetails: {
+    fontSize: 14,
+    color: '#dc2626',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  videoErrorPath: {
+    fontSize: 10,
+    color: '#991b1b',
+    textAlign: 'center',
+    fontFamily: 'monospace',
+  },
   
   // Audio Player Styles
   audioContainer: {
     flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fffbeb',
-    borderRadius: 8,
-    padding: 30,
-    borderWidth: 2,
-    borderColor: '#fbbf24',
+    paddingHorizontal: 20,
   },
   progressContainer: {
-    width: '100%',
-    marginBottom: 40,
+    marginBottom: 30,
   },
   progressBar: {
-    height: 4,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 2,
+    height: 6,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 3,
     marginBottom: 12,
   },
   progressFill: {
     height: '100%',
     backgroundColor: '#d97706',
-    borderRadius: 2,
+    borderRadius: 3,
   },
   timeContainer: {
     flexDirection: 'row',
@@ -1042,73 +1219,82 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: 14,
     color: '#a16207',
+    fontFamily: 'monospace',
   },
   audioControls: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: 280,
-  },
-  controlButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 4,
-    backgroundColor: '#fbbf24',
-    borderWidth: 2,
-    borderColor: '#92400e',
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 20,
+  },
+  controlButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#fffbeb',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fbbf24',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   playButton: {
     width: 64,
     height: 64,
-    borderRadius: 4,
+    borderRadius: 32,
     backgroundColor: '#d97706',
-    borderWidth: 2,
-    borderColor: '#92400e',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#d97706',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   audioRateText: {
-    fontSize: 8,
+    fontSize: 10,
     color: '#92400e',
     marginTop: 2,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   audioErrorContainer: {
-    backgroundColor: '#fff3cd',
-    borderRadius: 8,
+    backgroundColor: '#fef2f2',
+    borderRadius: 12,
     padding: 20,
-    margin: 20,
+    marginBottom: 30,
     borderWidth: 2,
-    borderColor: '#ffc107',
-    alignItems: 'center',
+    borderColor: '#fecaca',
   },
   audioErrorText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#856404',
-    marginBottom: 10,
+    color: '#dc2626',
+    marginBottom: 8,
     textAlign: 'center',
   },
   audioErrorDescription: {
     fontSize: 14,
-    color: '#856404',
-    textAlign: 'center',
+    color: '#991b1b',
     lineHeight: 20,
-    marginBottom: 15,
+    textAlign: 'center',
+    marginBottom: 16,
   },
   showFileButton: {
-    backgroundColor: '#ffc107',
+    backgroundColor: '#dc2626',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: '#856404',
+    borderRadius: 8,
+    alignSelf: 'center',
   },
   showFileButtonText: {
-    color: '#856404',
-    fontWeight: '600',
+    color: '#ffffff',
     fontSize: 14,
+    fontWeight: '600',
   },
   
   // Image Viewer Styles
@@ -1117,21 +1303,17 @@ const styles = StyleSheet.create({
   },
   imageScrollView: {
     flex: 1,
-    backgroundColor: '#fffbeb',
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#fbbf24',
   },
   imageScrollContent: {
-    alignItems: 'center',
+    flexGrow: 1,
     justifyContent: 'center',
-    minHeight: screenHeight - 200,
-    padding: 10,
+    alignItems: 'center',
   },
   image: {
-    width: screenWidth - 60,
-    height: screenHeight - 280,
-    borderRadius: 4,
+    width: '100%',
+    height: '100%',
+    maxWidth: 800,
+    maxHeight: 600,
   },
   
   // Text Viewer Styles
@@ -1140,16 +1322,16 @@ const styles = StyleSheet.create({
   },
   textScrollView: {
     flex: 1,
-    backgroundColor: '#fffbeb',
-    borderRadius: 8,
-    padding: 16,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
     borderWidth: 2,
     borderColor: '#fbbf24',
+    padding: 20,
   },
   textContent: {
     fontSize: 16,
     lineHeight: 24,
-    color: '#451a03',
+    color: '#1f2937',
   },
   
   // Error Styles
@@ -1157,105 +1339,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fffbeb',
-    borderRadius: 8,
-    padding: 30,
-    borderWidth: 2,
-    borderColor: '#fbbf24',
   },
   errorText: {
-    fontSize: 16,
-    color: '#92400e',
-    textAlign: 'center',
-  },
-  videoErrorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000000',
-    padding: 20,
-  },
-  videoErrorText: {
     fontSize: 18,
-    color: '#ffffff',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  videoErrorDetails: {
-    fontSize: 12,
-    color: '#cccccc',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  videoErrorPath: {
-    fontSize: 10,
-    color: '#888888',
-    textAlign: 'center',
-  },
-  // Playlist styles
-  playlistContainer: {
-    flex: 1,
-    backgroundColor: '#fefce8',
-  },
-  playlistHeader: {
-    padding: 20,
-    borderBottomWidth: 2,
-    borderBottomColor: '#fbbf24',
-    backgroundColor: '#fffbeb',
-  },
-  playlistTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#92400e',
-    marginBottom: 4,
-  },
-  playlistSubtitle: {
-    fontSize: 14,
-    color: '#a16207',
-  },
-  playlistItem: {
-    flexDirection: 'row',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#fbbf24',
-    backgroundColor: '#fefce8',
-  },
-  playlistItemActive: {
-    backgroundColor: '#fffbeb',
-    borderLeftWidth: 4,
-    borderLeftColor: '#d97706',
-  },
-  playlistItemInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  playlistItemTitle: {
-    fontSize: 16,
     fontWeight: '600',
-    color: '#451a03',
-    marginBottom: 4,
-  },
-  playlistItemDuration: {
-    fontSize: 12,
-    color: '#d97706',
-    marginBottom: 2,
-  },
-  playlistItemFilename: {
-    fontSize: 11,
-    color: '#a16207',
-    fontFamily: 'monospace',
-  },
-  playlistItemActions: {
-    justifyContent: 'center',
-  },
-  playlistItemButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#fbbf24',
-    borderWidth: 2,
-    borderColor: '#92400e',
-    justifyContent: 'center',
-    alignItems: 'center',
+    color: '#dc2626',
+    textAlign: 'center',
   },
 });

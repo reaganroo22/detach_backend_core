@@ -13,10 +13,12 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Download, Trash2, Folder, Copy, Eye, Headphones, FileText, ImageIcon, Video, FolderPlus, Archive, Edit3, MoreHorizontal } from 'lucide-react-native';
+import { Download, Trash2, Folder, Copy, Eye, Headphones, FileText, ImageIcon, Video, FolderPlus, Archive, Edit3, MoreHorizontal, Settings, Plus } from 'lucide-react-native';
 import { downloadService, DownloadItem, Folder as FolderType } from '../../services/downloadService';
+import { playlistService } from '../../services/playlistService';
 import EnhancedMediaViewer from '../../components/EnhancedMediaViewer';
 import { useTheme } from '../../contexts/ThemeContext';
+import { router } from 'expo-router';
 
 export default function LibraryTab() {
   const { theme } = useTheme();
@@ -355,6 +357,62 @@ export default function LibraryTab() {
     );
   };
 
+  const handleAddToPlaylist = (downloadId: string) => {
+    const playlists = playlistService.getPlaylists();
+    
+    if (playlists.length === 0) {
+      Alert.alert(
+        'No Playlists',
+        'You need to create a playlist first. Would you like to create one now?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Create Playlist',
+            onPress: () => {
+              Alert.prompt(
+                'Create Playlist',
+                'Enter a name for your new playlist:',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Create',
+                    onPress: async (playlistName) => {
+                      if (playlistName && playlistName.trim()) {
+                        const playlistId = await playlistService.createPlaylist(playlistName.trim());
+                        await playlistService.addToPlaylist(playlistId, downloadId);
+                        Alert.alert('Success', `Added to "${playlistName}" playlist!`);
+                      }
+                    }
+                  }
+                ],
+                'plain-text',
+                'My Playlist'
+              );
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    const playlistOptions = [
+      ...playlists.map(playlist => ({
+        text: playlist.name,
+        onPress: async () => {
+          const success = await playlistService.addToPlaylist(playlist.id, downloadId);
+          if (success) {
+            Alert.alert('Success', `Added to "${playlist.name}" playlist!`);
+          } else {
+            Alert.alert('Error', 'This item is already in that playlist');
+          }
+        }
+      })),
+      { text: 'Cancel', style: 'cancel' as const }
+    ];
+
+    Alert.alert('Add to Playlist', 'Choose a playlist:', playlistOptions);
+  };
+
   const handleFolderMenu = (folderId: string) => {
     const folder = folders.find(f => f.id === folderId);
     Alert.alert(
@@ -395,6 +453,12 @@ export default function LibraryTab() {
           </Text>
         </View>
         <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.settingsButton} 
+            onPress={() => router.push('/settings')}
+          >
+            <Settings size={20} color={theme.colors.text} />
+          </TouchableOpacity>
           {filteredContent.length > 0 && (
             <TouchableOpacity 
               style={styles.organizeButton} 
@@ -625,6 +689,15 @@ export default function LibraryTab() {
                     <Archive size={16} color={theme.colors.textSecondary} />
                   </TouchableOpacity>
                   
+                  {item.status === 'completed' && (item.contentType === 'audio' || item.contentType === 'video') && (
+                    <TouchableOpacity 
+                      style={styles.actionButton}
+                      onPress={() => handleAddToPlaylist(item.id)}
+                    >
+                      <Plus size={16} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                  )}
+                  
                   <TouchableOpacity 
                     style={styles.actionButton}
                     onPress={() => handleCopyLink(item.url)}
@@ -650,6 +723,7 @@ export default function LibraryTab() {
           item={selectedItem}
           visible={mediaViewerVisible}
           onClose={handleCloseMediaViewer}
+          playlist={filteredContent.filter(item => item.contentType === 'audio' && item.status === 'completed')}
         />
       )}
     </SafeAreaView>
@@ -692,6 +766,17 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.colors.primaryText,
     fontSize: 12,
     fontWeight: '600',
+  },
+  settingsButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   title: {
     fontSize: 32,

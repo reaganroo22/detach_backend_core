@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Download, Archive, Settings } from 'lucide-react-native';
+import { Download, Archive, List } from 'lucide-react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import LoginScreen from '../../components/LoginScreen';
 import { ActivityIndicator, View } from 'react-native';
@@ -58,11 +58,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="settings"
+        name="playlists"
         options={{
-          title: 'Settings',
+          title: 'Playlists',
           tabBarIcon: ({ size, color }) => (
-            <Settings size={size} color={color} />
+            <List size={size} color={color} />
           ),
         }}
       />
