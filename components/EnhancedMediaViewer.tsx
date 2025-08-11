@@ -10,9 +10,10 @@ import {
   Dimensions,
   Image,
   StatusBar,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { Video } from 'expo-av';
+import { Video, ResizeMode } from 'expo-av';
 import { Audio } from 'expo-av';
 import { 
   X, 
@@ -22,8 +23,8 @@ import {
   VolumeX, 
   FastForward, 
   Rewind,
-  ChevronLeft,
-  ChevronRight, 
+  SkipBack,
+  SkipForward, 
   Maximize,
   Minimize,
   Gauge
@@ -69,7 +70,7 @@ export default function EnhancedMediaViewer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [showControls, setShowControls] = useState(true);
-  const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [controlsTimeout, setControlsTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [dimensions, setDimensions] = useState(getScreenDimensions());
   
   // Playlist states
@@ -78,7 +79,9 @@ export default function EnhancedMediaViewer({
   
   // Audio player states
   const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(() => {
+    return Boolean(isPlaylistMode);
+  });
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -96,10 +99,54 @@ export default function EnhancedMediaViewer({
   const videoRef = useRef<Video>(null);
   const [videoStatus, setVideoStatus] = useState<PlaybackStatus>({ isLoaded: false });
   const [videoLoadError, setVideoLoadError] = useState<string | null>(null);
+  const [forceVideoRemount, setForceVideoRemount] = useState(0);
+  
+  // Auto-landscape detection for fullscreen mode  
+  const isLandscape = isFullscreen && dimensions.width > dimensions.height;
+  
+  if (isFullscreen) {
+    console.log('Fullscreen mode - isLandscape:', isLandscape, 'dimensions:', dimensions.width + 'x' + dimensions.height);
+  }
+  
+  // Double-tap detection
+  const [lastTap, setLastTap] = useState<number | null>(null);
+  const [tapTimer, setTapTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (visible && item && item.filePath) {
+      
+      // Reset video states for new item
+      if (item.contentType === 'video') {
+        console.log('Resetting video states for new video item');
+        console.log('Previous video ref exists:', !!videoRef.current);
+        
+        // Cleanup of previous video component
+        if (videoRef.current) {
+          try {
+            videoRef.current.pauseAsync().catch(console.error);
+            videoRef.current.unloadAsync().catch(console.error);
+          } catch (error) {
+            console.error('Error cleaning up previous video:', error);
+          }
+        }
+        
+        setVideoStatus({ isLoaded: false });
+        setVideoLoadError(null);
+        setPosition(0);
+        setDuration(0);
+        setForceVideoRemount(prev => prev + 1); // Force video component remount
+        
+        console.log('Video states reset complete, forcing remount:', forceVideoRemount + 1);
+      }
+      
+      // Reset playing state to auto-play in playlist mode
+      setIsPlaying(isPlaylistMode || false);
+      
+      // Show controls initially, let auto-hide handle them later
+      setShowControls(true);
+      
       loadContent();
+      
       // Find current track index in playlist
       if (hasPlaylist) {
         const index = playlistTracks.findIndex(track => track.id === item.id);
@@ -110,27 +157,79 @@ export default function EnhancedMediaViewer({
     return () => {
       cleanup();
     };
-  }, [visible, item?.filePath]);
+  }, [visible, item?.id, item?.filePath, isPlaylistMode]);
+
+  // Auto-play when playlist mode changes
+  useEffect(() => {
+    if (isPlaylistMode && visible && item?.contentType === 'video' && videoStatus.isLoaded) {
+      setIsPlaying(true);
+    }
+  }, [isPlaylistMode]);
 
   // Handle screen rotation and dimensions
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      console.log('Screen dimensions changed:', window.width, 'x', window.height);
       setDimensions(window);
+      
+      // Show controls when rotating to help user with orientation change
+      if (item?.contentType === 'video') {
+        setShowControls(true);
+        console.log('Screen rotated - new dimensions:', window.width + 'x' + window.height, 'isFullscreen:', isFullscreen);
+      }
     });
     
     return () => subscription?.remove();
-  }, []);
+  }, [item?.contentType]);
 
-  // Listen for track end to auto-advance
+  // Listen for orientation changes directly
   useEffect(() => {
-    let intervalId: NodeJS.Timeout;
+    let orientationSubscription: any;
+    
+    if (isFullscreen) {
+      const checkOrientation = async () => {
+        try {
+          const orientation = await ScreenOrientation.getOrientationAsync();
+          console.log('Current orientation:', orientation);
+        } catch (error) {
+          console.log('Could not get orientation:', error);
+        }
+      };
+      
+      checkOrientation();
+      
+      // Set up orientation change listener
+      orientationSubscription = ScreenOrientation.addOrientationChangeListener((event) => {
+        console.log('Orientation changed to:', event.orientationInfo.orientation);
+        console.log('Screen lock type:', event.orientationLock);
+        
+        // Force a re-render when orientation changes
+        const newDimensions = Dimensions.get('window');
+        console.log('Force updating dimensions after orientation change:', newDimensions.width + 'x' + newDimensions.height);
+        setDimensions({ ...newDimensions });
+      });
+      
+      console.log('Orientation listener set up for fullscreen mode');
+    }
+    
+    return () => {
+      if (orientationSubscription) {
+        ScreenOrientation.removeOrientationChangeListener(orientationSubscription);
+      }
+    };
+  }, [isFullscreen]);
+
+  // Monitor background audio state (removed auto-advance)
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval>;
     
     if (useBackgroundAudio && backgroundSound && visible && hasPlaylist) {
       intervalId = setInterval(async () => {
         try {
           const status = await backgroundSound.getStatusAsync();
           if (status.isLoaded && !status.isPlaying && status.didJustFinish) {
-            playNextTrack();
+            console.log('Background audio finished');
+            // Auto-advance removed - user must manually skip
           }
         } catch (error) {
           console.error('Error checking track end:', error);
@@ -145,7 +244,7 @@ export default function EnhancedMediaViewer({
 
   // Monitor background audio state
   useEffect(() => {
-    let intervalId: NodeJS.Timeout;
+    let intervalId: ReturnType<typeof setInterval>;
     
     if (useBackgroundAudio && backgroundSound && visible) {
       intervalId = setInterval(async () => {
@@ -167,16 +266,16 @@ export default function EnhancedMediaViewer({
     };
   }, [useBackgroundAudio, backgroundSound, visible]);
 
-  // Auto-hide controls for video
+  // Auto-hide controls for video (but only if video is loaded and playing)
   useEffect(() => {
-    if (item?.contentType === 'video' && showControls) {
+    if (item?.contentType === 'video' && showControls && videoStatus.isLoaded && isPlaying) {
       if (controlsTimeout) {
         clearTimeout(controlsTimeout);
       }
       
       const timeout = setTimeout(() => {
         setShowControls(false);
-      }, 3000);
+      }, 4000); // Increased timeout to 4 seconds
       
       setControlsTimeout(timeout);
       
@@ -184,7 +283,7 @@ export default function EnhancedMediaViewer({
         if (timeout) clearTimeout(timeout);
       };
     }
-  }, [showControls, item?.contentType]);
+  }, [showControls, item?.contentType, videoStatus.isLoaded, isPlaying]);
 
   const cleanup = async () => {
     // Cleanup background audio
@@ -205,16 +304,27 @@ export default function EnhancedMediaViewer({
     // Cleanup video
     if (videoRef.current) {
       try {
+        // First pause, then unload
+        await videoRef.current.pauseAsync();
         await videoRef.current.unloadAsync();
       } catch (error) {
         console.error('Error cleaning up video:', error);
       }
     }
     
+    // Clear video ref
+    if (videoRef.current) {
+      videoRef.current = null;
+    }
+    
     // Clear timeouts
     if (controlsTimeout) {
       clearTimeout(controlsTimeout);
       setControlsTimeout(null);
+    }
+    if (tapTimer) {
+      clearTimeout(tapTimer);
+      setTapTimer(null);
     }
     
     // Reset states
@@ -227,9 +337,10 @@ export default function EnhancedMediaViewer({
     setVideoLoadError(null);
     setIsFullscreen(false);
     setPlaybackRate(1.0);
-    setShowControls(true);
+    setShowControls(false); // Start with controls hidden to prevent quivering
     setUseBackgroundAudio(false);
     setBackgroundSound(null);
+    setLastTap(null);
   };
 
   const loadContent = async () => {
@@ -252,6 +363,7 @@ export default function EnhancedMediaViewer({
           break;
         case 'video':
           console.log('Loading video from path:', item.filePath);
+          console.log('Video loading - isPlaylistMode:', isPlaylistMode, 'currentTrackIndex:', currentTrackIndex);
           setIsLoading(false);
           break;
         case 'image':
@@ -280,6 +392,11 @@ export default function EnhancedMediaViewer({
     } catch (error) {
       console.warn('Background audio failed, falling back to regular audio:', error);
       setUseBackgroundAudio(false);
+      
+      // If background audio fails due to corruption and we're in playlist mode, try to advance
+      if (hasPlaylist && error.message && error.message.includes('This media may be damaged')) {
+        console.log('Background audio corrupted, will try regular audio first, then advance if that fails too');
+      }
       
       // Fallback to regular audio
       try {
@@ -319,7 +436,7 @@ export default function EnhancedMediaViewer({
         
         const audioPromise = Audio.Sound.createAsync(
           { uri: item.filePath! },
-          { shouldPlay: false, isLooping: false }
+          { shouldPlay: isPlaylistMode || false, isLooping: false }
         );
 
         const result = await Promise.race([audioPromise, timeoutPromise]) as { sound: Audio.Sound };
@@ -333,6 +450,11 @@ export default function EnhancedMediaViewer({
             setDuration(status.durationMillis || 0);
             setPosition(status.positionMillis || 0);
             setIsPlaying(status.isPlaying || false);
+            
+            // Track when audio finishes (auto-advance removed)
+            if (hasPlaylist && status.didJustFinish && !status.isPlaying) {
+              console.log('Audio finished - user must manually skip to next track');
+            }
           }
         });
 
@@ -346,24 +468,39 @@ export default function EnhancedMediaViewer({
         }
 
       } catch (audioError) {
-        console.warn('Audio creation failed, showing basic player UI anyway:', audioError);
+        console.warn('Audio creation failed:', audioError);
         setSound(null);
         setDuration(0);
+        
+        // If in playlist mode and audio fails to load, show error (auto-advance removed)
+        if (hasPlaylist && audioError.message.includes('This media may be damaged')) {
+          console.log('Corrupted audio file detected - user must manually skip to next track');
+        }
       }
     }
   };
 
   const playNextTrack = () => {
+    console.log('playNextTrack called - hasPlaylist:', hasPlaylist, 'currentIndex:', currentTrackIndex, 'totalTracks:', playlistTracks.length);
     if (!hasPlaylist) return;
     
-    const nextIndex = (currentTrackIndex + 1) % playlistTracks.length;
-    playTrackAtIndex(nextIndex);
+    const nextIndex = currentTrackIndex + 1;
+    if (nextIndex < playlistTracks.length) {
+      console.log('Playing next track at index:', nextIndex);
+      playTrackAtIndex(nextIndex);
+    } else {
+      console.log('Reached end of playlist, stopping playback');
+      setIsPlaying(false);
+      // Optionally loop back to beginning: playTrackAtIndex(0);
+    }
   };
 
   const playPreviousTrack = () => {
+    console.log('playPreviousTrack called - hasPlaylist:', hasPlaylist, 'currentIndex:', currentTrackIndex, 'totalTracks:', playlistTracks.length);
     if (!hasPlaylist) return;
     
     const prevIndex = currentTrackIndex === 0 ? playlistTracks.length - 1 : currentTrackIndex - 1;
+    console.log('Playing previous track at index:', prevIndex);
     playTrackAtIndex(prevIndex);
   };
 
@@ -374,22 +511,23 @@ export default function EnhancedMediaViewer({
     setCurrentTrackIndex(index);
     
     try {
-      // Stop current track
+      // Stop current track (audio or video)
+      if (item?.contentType === 'video' && videoRef.current) {
+        await videoRef.current.pauseAsync();
+      }
       if (useBackgroundAudio) {
         await BackgroundAudioService.stop();
       } else if (sound) {
         await sound.pauseAsync();
       }
       
-      // For video content, notify parent to change the track
-      if (newTrack.contentType === 'video') {
-        if (onTrackChange) {
-          onTrackChange(newTrack);
-          return;
-        }
+      // Always notify parent to change the track for proper state management
+      if (onTrackChange) {
+        onTrackChange(newTrack);
+        return;
       }
       
-      // For audio content with background service, we can switch tracks seamlessly
+      // Fallback: if no parent callback, try to handle internally
       if (newTrack.filePath && newTrack.contentType === 'audio') {
         if (useBackgroundAudio) {
           const newSound = await BackgroundAudioService.loadAndPlay(newTrack.filePath);
@@ -471,10 +609,14 @@ export default function EnhancedMediaViewer({
 
   const seekAudio = async (milliseconds: number) => {
     try {
+      // Immediate UI feedback
+      const clampedPosition = Math.max(0, Math.min(milliseconds, duration));
+      setPosition(clampedPosition);
+      
       if (useBackgroundAudio) {
-        await BackgroundAudioService.setPosition(milliseconds);
+        await BackgroundAudioService.setPosition(clampedPosition);
       } else if (sound) {
-        await sound.setPositionAsync(Math.max(0, Math.min(milliseconds, duration)));
+        await sound.setPositionAsync(clampedPosition);
       }
     } catch (error) {
       console.error('Error seeking:', error);
@@ -520,29 +662,86 @@ export default function EnhancedMediaViewer({
 
   const toggleFullscreen = async () => {
     const newFullscreenState = !isFullscreen;
+    console.log('Toggling fullscreen to:', newFullscreenState);
     setIsFullscreen(newFullscreenState);
     
     if (newFullscreenState) {
-      // Entering fullscreen
+      // Entering fullscreen - automatically go to landscape
       StatusBar.setHidden(true);
       try {
-        await ScreenOrientation.unlockAsync();
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_LEFT);
+        console.log('Automatically locked to landscape for fullscreen');
       } catch (error) {
-        console.log('Screen orientation unlock not supported');
+        console.log('Could not lock to landscape:', error);
+        // Fallback: try to unlock for free orientation
+        try {
+          await ScreenOrientation.unlockAsync();
+          console.log('Fallback: unlocked orientation');
+        } catch (fallbackError) {
+          console.log('No orientation control available');
+        }
       }
     } else {
       // Exiting fullscreen
       StatusBar.setHidden(false);
       try {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        // Allow portrait orientations when exiting fullscreen (try portrait up first, then fallback)
+        try {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+          console.log('Screen orientation locked to portrait up');
+        } catch (portraitError) {
+          // If portrait up doesn't work, try allowing default orientation
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.DEFAULT);
+          console.log('Screen orientation set to default');
+        }
       } catch (error) {
-        console.log('Screen orientation lock not supported');
+        console.log('Screen orientation lock not supported:', error);
       }
     }
   };
 
   const showVideoControls = () => {
+    console.log('Showing video controls');
     setShowControls(true);
+  };
+
+  const handleDoubleTap = (action: 'rewind' | 'forward') => {
+    const now = Date.now();
+    const DOUBLE_PRESS_DELAY = 300;
+
+    if (lastTap && (now - lastTap) < DOUBLE_PRESS_DELAY) {
+      // Double tap detected
+      if (tapTimer) {
+        clearTimeout(tapTimer);
+        setTapTimer(null);
+      }
+      
+      if (videoRef.current) {
+        if (action === 'rewind') {
+          const newPosition = Math.max(0, position - 10000);
+          console.log('Double-tap rewind to:', Math.floor(newPosition / 1000), 'seconds');
+          videoRef.current.setPositionAsync(newPosition);
+        } else {
+          const newPosition = Math.min(duration, position + 10000);
+          console.log('Double-tap fast forward to:', Math.floor(newPosition / 1000), 'seconds');
+          videoRef.current.setPositionAsync(newPosition);
+        }
+      }
+      
+      setLastTap(null);
+    } else {
+      // Single tap - show controls after delay
+      setLastTap(now);
+      const timeout = setTimeout(() => {
+        showVideoControls();
+        setLastTap(null);
+      }, DOUBLE_PRESS_DELAY);
+      
+      if (tapTimer) {
+        clearTimeout(tapTimer);
+      }
+      setTapTimer(timeout);
+    }
   };
 
   const handlePlaybackRatePress = () => {
@@ -568,11 +767,17 @@ export default function EnhancedMediaViewer({
 
   const handleClose = async () => {
     StatusBar.setHidden(false);
-    // Reset orientation to portrait when closing
+    // Reset orientation to portrait when closing the media viewer entirely
     try {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      try {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        console.log('Screen orientation locked to portrait up on close');
+      } catch (portraitError) {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.DEFAULT);
+        console.log('Screen orientation set to default on close');
+      }
     } catch (error) {
-      console.log('Screen orientation lock not supported');
+      console.log('Screen orientation lock not supported on close:', error);
     }
     await cleanup();
     onClose();
@@ -608,14 +813,71 @@ export default function EnhancedMediaViewer({
   };
 
   const renderVideoPlayer = () => (
-    <View style={[styles.videoContainer, isFullscreen && styles.fullscreenContainer]}>
+    <View style={[
+      styles.videoContainer, 
+      isFullscreen && styles.fullscreenContainer
+    ]}>
       {!isFullscreen && (
         <>
-          <Text style={styles.mediaTitle}>{getSafeTitle()}</Text>
-          <Text style={styles.mediaSubtitle}>
-            {`${getSafePlatformName()} • Video`}
+          <Text style={styles.mediaTitle}>
+            {hasPlaylist ? playlistTracks[currentTrackIndex]?.title || getSafeTitle() : getSafeTitle()}
           </Text>
+          <Text style={styles.mediaSubtitle}>
+            {hasPlaylist ? playlistTracks[currentTrackIndex]?.platform : getSafePlatformName()} • {hasPlaylist ? playlistTracks[currentTrackIndex]?.contentType : 'Video'}
+          </Text>
+          {hasPlaylist && (
+            <View style={styles.playlistContainer}>
+              <Text style={styles.playlistIndicator}>
+                Track {currentTrackIndex + 1} of {playlistTracks.length}
+              </Text>
+              <View style={styles.playlistControls}>
+                <TouchableOpacity 
+                  style={[styles.controlButton, currentTrackIndex === 0 && styles.controlButtonDisabled]}
+                  onPress={playPreviousTrack}
+                  disabled={currentTrackIndex === 0}
+                >
+                  <SkipBack size={20} color={currentTrackIndex === 0 ? "#a16207" : "#92400e"} />
+                  <Text style={[styles.controlLabel, currentTrackIndex === 0 && styles.controlLabelDisabled]}>Prev</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.controlButton, currentTrackIndex === playlistTracks.length - 1 && styles.controlButtonDisabled]}
+                  onPress={playNextTrack}
+                  disabled={currentTrackIndex === playlistTracks.length - 1}
+                >
+                  <SkipForward size={20} color={currentTrackIndex === playlistTracks.length - 1 ? "#a16207" : "#92400e"} />
+                  <Text style={[styles.controlLabel, currentTrackIndex === playlistTracks.length - 1 && styles.controlLabelDisabled]}>Next</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </>
+      )}
+      
+      {/* Landscape playlist controls overlay for fullscreen */}
+      {isLandscape && hasPlaylist && (
+        <View style={styles.landscapePlaylistOverlay}>
+          <Text style={styles.landscapePlaylistIndicator}>
+            Track {currentTrackIndex + 1} of {playlistTracks.length}
+          </Text>
+          <View style={styles.landscapePlaylistControls}>
+            <TouchableOpacity 
+              style={[styles.landscapeControlButton, currentTrackIndex === 0 && styles.controlButtonDisabled]}
+              onPress={playPreviousTrack}
+              disabled={currentTrackIndex === 0}
+            >
+              <SkipBack size={18} color={currentTrackIndex === 0 ? "#a16207" : "#92400e"} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.landscapeControlButton, currentTrackIndex === playlistTracks.length - 1 && styles.controlButtonDisabled]}
+              onPress={playNextTrack}
+              disabled={currentTrackIndex === playlistTracks.length - 1}
+            >
+              <SkipForward size={18} color={currentTrackIndex === playlistTracks.length - 1 ? "#a16207" : "#92400e"} />
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
       
       <TouchableOpacity 
@@ -623,6 +885,19 @@ export default function EnhancedMediaViewer({
         onPress={showVideoControls}
         activeOpacity={1}
       >
+        {/* Left side - double tap to rewind */}
+        <TouchableWithoutFeedback 
+          onPress={() => handleDoubleTap('rewind')}
+        >
+          <View style={styles.videoTapZoneLeft} />
+        </TouchableWithoutFeedback>
+        
+        {/* Right side - double tap to fast forward */}
+        <TouchableWithoutFeedback 
+          onPress={() => handleDoubleTap('forward')}
+        >
+          <View style={styles.videoTapZoneRight} />
+        </TouchableWithoutFeedback>
         {videoLoadError ? (
           <View style={styles.videoErrorContainer}>
             <Text style={styles.videoErrorText}>Video Load Error</Text>
@@ -631,23 +906,40 @@ export default function EnhancedMediaViewer({
           </View>
         ) : (
           <Video
+            key={`video_${forceVideoRemount}_${item.id}`}
             ref={videoRef}
             source={{ uri: item.filePath! }}
             style={styles.video}
             useNativeControls={false}
-            resizeMode="contain"
-            shouldPlay={isPlaying}
+            resizeMode={ResizeMode.CONTAIN}
+            shouldPlay={false}
             isLooping={false}
             rate={playbackRate}
             isMuted={isMuted}
             onLoad={(loadStatus) => {
-              console.log('Video onLoad called with status:', loadStatus);
+              console.log('Video onLoad called with status:', loadStatus.isLoaded, 'isPlaylistMode:', isPlaylistMode, 'item:', item.title);
+              console.log('Video onLoad - shouldPlay:', isPlaying, 'currentTrackIndex:', currentTrackIndex);
               if (loadStatus.isLoaded) {
-                console.log('Video loaded successfully - Duration:', loadStatus.durationMillis);
                 setDuration(loadStatus.durationMillis || 0);
                 setVideoStatus({ isLoaded: true });
-              } else {
-                console.log('Video failed to load:', loadStatus);
+                
+                console.log('Video loaded successfully, starting playback');
+                setIsPlaying(true);
+                setShowControls(true);
+                
+                // Always try to start playing when video loads (for both playlist and non-playlist)
+                setTimeout(async () => {
+                  if (videoRef.current) {
+                    try {
+                      console.log('Attempting to play video after load');
+                      await videoRef.current.playAsync();
+                      console.log('Video play successful after load');
+                      setIsPlaying(true);
+                    } catch (error) {
+                      console.error('Video play failed after load:', error);
+                    }
+                  }
+                }, 300); // Longer delay to ensure component is ready
               }
             }}
             onPlaybackStatusUpdate={(status) => {
@@ -657,14 +949,30 @@ export default function EnhancedMediaViewer({
                 if (status.durationMillis) {
                   setDuration(status.durationMillis);
                 }
+                
+                // Track when video finishes (auto-advance removed)
+                if (hasPlaylist && status.didJustFinish && !status.isPlaying) {
+                  console.log('Video finished - user must manually skip to next track');
+                }
               } else if (status.error) {
-                console.error('Video playback error:', status.error);
+                console.error('Video playbook error:', status.error);
               }
             }}
             onError={(error) => {
               console.error('Video component error:', error);
               setVideoLoadError(`Video failed to load: ${error}`);
-              Alert.alert('Video Error', 'Failed to load video. Please try again.');
+              
+              // If in playlist mode and video fails to load, show error (auto-advance removed)
+              if (hasPlaylist) {
+                console.log('Video failed to load in playlist - user must manually skip to next track');
+              }
+            }}
+            onLoadStart={() => {
+              console.log('Video load started for:', item.title);
+              setVideoLoadError(null);
+            }}
+            onReadyForDisplay={() => {
+              console.log('Video ready for display:', item.title);
             }}
           />
         )}
@@ -673,9 +981,16 @@ export default function EnhancedMediaViewer({
         {showControls && (
           <View style={styles.videoControls}>
             <View style={styles.videoControlsTop}>
-              <TouchableOpacity style={styles.fullscreenButton} onPress={toggleFullscreen}>
+              <TouchableOpacity 
+                style={styles.fullscreenButton} 
+                onPress={() => {
+                  console.log('Fullscreen button pressed, current state:', isFullscreen);
+                  toggleFullscreen();
+                }}
+              >
                 {isFullscreen ? <Minimize size={24} color="#ffffff" /> : <Maximize size={24} color="#ffffff" />}
               </TouchableOpacity>
+              
             </View>
             
             <View style={styles.videoControlsCenter}>
@@ -703,13 +1018,14 @@ export default function EnhancedMediaViewer({
                   onPress={(e) => {
                     if (duration > 0 && videoRef.current) {
                       const { locationX } = e.nativeEvent;
-                      const progressBarWidth = 280;
+                      const progressBarWidth = 280; // Approximate width as a fallback
                       const seekPercent = locationX / progressBarWidth;
                       const seekTime = seekPercent * duration;
+                      console.log('Video seeking to:', Math.floor(seekTime / 1000), 'seconds');
                       videoRef.current.setPositionAsync(Math.max(0, Math.min(seekTime, duration)));
                     }
                   }}
-                  activeOpacity={1}
+                  activeOpacity={0.8}
                 >
                   <View 
                     style={[
@@ -752,7 +1068,7 @@ export default function EnhancedMediaViewer({
             onPress={playPreviousTrack}
             disabled={currentTrackIndex === 0}
           >
-            <ChevronLeft size={20} color={currentTrackIndex === 0 ? "#a16207" : "#92400e"} />
+            <SkipBack size={20} color={currentTrackIndex === 0 ? "#a16207" : "#92400e"} />
             <Text style={[styles.controlLabel, currentTrackIndex === 0 && styles.controlLabelDisabled]}>Prev</Text>
           </TouchableOpacity>
           
@@ -761,7 +1077,7 @@ export default function EnhancedMediaViewer({
             onPress={playNextTrack}
             disabled={currentTrackIndex === playlistTracks.length - 1}
           >
-            <ChevronRight size={20} color={currentTrackIndex === playlistTracks.length - 1 ? "#a16207" : "#92400e"} />
+            <SkipForward size={20} color={currentTrackIndex === playlistTracks.length - 1 ? "#a16207" : "#92400e"} />
             <Text style={[styles.controlLabel, currentTrackIndex === playlistTracks.length - 1 && styles.controlLabelDisabled]}>Next</Text>
           </TouchableOpacity>
         </View>
@@ -783,15 +1099,26 @@ export default function EnhancedMediaViewer({
                     Linking.openURL(item.filePath!);
                   });
                 } else {
-                  import('expo-intent-launcher').then(IntentLauncher => {
-                    IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-                      data: item.filePath!,
-                      flags: 1,
-                    }).catch(() => {
-                      Alert.alert('File Location', item.filePath || 'File path not available');
-                    });
-                  }).catch(() => {
-                    Alert.alert('File Location', item.filePath || 'File path not available');
+                  // For iOS, show file path since we can't open files directly
+                  const fileName = item.filePath.split('/').pop() || 'Unknown file';
+                  const fileSize = item.fileExtension ? `${item.contentType.toUpperCase()} file` : 'File';
+                  // Show file info with size for verification
+                  import('expo-file-system').then(async (FileSystem) => {
+                    try {
+                      const fileInfo = await FileSystem.default.getInfoAsync(item.filePath!);
+                      const fileSizeMB = fileInfo.exists && fileInfo.size ? (fileInfo.size / (1024 * 1024)).toFixed(2) : 'Unknown';
+                      Alert.alert(
+                        'File Downloaded Successfully', 
+                        `${fileSize}: ${fileName}\nSize: ${fileSizeMB} MB\nExists: ${fileInfo.exists ? 'Yes' : 'No'}\n\nFile is saved to your device storage and can be played from within the app.`,
+                        [{ text: 'OK', style: 'default' }]
+                      );
+                    } catch (error) {
+                      Alert.alert(
+                        'File Downloaded Successfully', 
+                        `${fileSize}: ${fileName}\n\nFile is saved to your device storage and can be played from within the app.`,
+                        [{ text: 'OK', style: 'default' }]
+                      );
+                    }
                   });
                 }
               } else {
@@ -807,14 +1134,27 @@ export default function EnhancedMediaViewer({
       {(sound || useBackgroundAudio) && (
         <>
           <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
+            <TouchableOpacity 
+              style={styles.progressBar}
+              onPress={(e) => {
+                if (duration > 0) {
+                  const { locationX } = e.nativeEvent;
+                  const progressBarWidth = 300; // approximate width
+                  const seekPercent = locationX / progressBarWidth;
+                  const seekTime = seekPercent * duration;
+                  console.log('Audio seeking to:', Math.floor(seekTime / 1000), 'seconds');
+                  seekAudio(seekTime);
+                }
+              }}
+              activeOpacity={0.8}
+            >
               <View 
                 style={[
                   styles.progressFill, 
                   { width: duration > 0 ? `${Math.min((position / duration) * 100, 100)}%` : '0%' }
                 ]} 
               />
-            </View>
+            </TouchableOpacity>
             <View style={styles.timeContainer}>
               <Text style={styles.timeText}>{formatTime(position)}</Text>
               <Text style={styles.timeText}>{formatTime(duration)}</Text>
@@ -824,7 +1164,11 @@ export default function EnhancedMediaViewer({
           <View style={styles.audioControls}>
             <TouchableOpacity 
               style={styles.controlButton} 
-              onPress={() => seekAudio(Math.max(0, position - 10000))}
+              onPress={() => {
+                const newPosition = Math.max(0, position - 10000);
+                console.log('Rewinding to:', Math.floor(newPosition / 1000), 'seconds');
+                seekAudio(newPosition);
+              }}
             >
               <Rewind size={20} color="#92400e" />
             </TouchableOpacity>
@@ -844,7 +1188,11 @@ export default function EnhancedMediaViewer({
             
             <TouchableOpacity 
               style={styles.controlButton} 
-              onPress={() => seekAudio(Math.min(duration, position + 10000))}
+              onPress={() => {
+                const newPosition = Math.min(duration, position + 10000);
+                console.log('Fast-forwarding to:', Math.floor(newPosition / 1000), 'seconds');
+                seekAudio(newPosition);
+              }}
             >
               <FastForward size={20} color="#92400e" />
             </TouchableOpacity>
@@ -873,7 +1221,7 @@ export default function EnhancedMediaViewer({
           <Image 
             source={{ uri: imageUri }} 
             style={styles.image}
-            resizeMode="contain"
+            resizeMode={ResizeMode.CONTAIN}
           />
         ) : (
           <Text style={styles.errorText}>No image available</Text>
@@ -934,7 +1282,10 @@ export default function EnhancedMediaViewer({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
-      <View style={[styles.container, isFullscreen && styles.fullscreenContainer]}>
+      <View style={[
+        styles.container, 
+        isFullscreen && styles.fullscreenContainer
+      ]}>
         {!isFullscreen && (
           <View style={styles.header}>
             <View style={styles.headerLeft} />
@@ -966,6 +1317,12 @@ const styles = StyleSheet.create({
   },
   fullscreenContainer: {
     backgroundColor: '#000000',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
   },
   header: {
     flexDirection: 'row',
@@ -1007,6 +1364,9 @@ const styles = StyleSheet.create({
   },
   fullscreenContent: {
     padding: 0,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   
   // Common Media Styles
@@ -1076,13 +1436,19 @@ const styles = StyleSheet.create({
   fullscreenVideoWrapper: {
     borderRadius: 0,
     borderWidth: 0,
-    minHeight: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     width: '100%',
+    height: '100%',
   },
   video: {
     flex: 1,
     width: '100%',
     height: '100%',
+    alignSelf: 'center',
   },
   videoControls: {
     position: 'absolute',
@@ -1091,17 +1457,22 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    zIndex: 20,
   },
   videoControlsTop: {
     position: 'absolute',
     top: 20,
     right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   videoControlsCenter: {
     position: 'absolute',
     top: '50%',
     left: '50%',
     transform: [{ translateX: -40 }, { translateY: -40 }],
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   videoControlsBottom: {
     position: 'absolute',
@@ -1121,6 +1492,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(146, 64, 14, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 30,
+  },
+  landscapeToggleButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(146, 64, 14, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 30,
+    marginLeft: 12,
+  },
+  landscapeToggleButtonActive: {
+    backgroundColor: 'rgba(251, 191, 36, 0.9)',
+  },
+  landscapeToggleText: {
+    fontSize: 18,
+    color: '#ffffff',
+    fontWeight: 'bold',
   },
   videoPlayButton: {
     width: 80,
@@ -1190,6 +1580,61 @@ const styles = StyleSheet.create({
     color: '#991b1b',
     textAlign: 'center',
     fontFamily: 'monospace',
+  },
+  videoTapZoneLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '40%',
+    zIndex: 10,
+  },
+  videoTapZoneRight: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: '40%',
+    zIndex: 10,
+  },
+  playlistContainer: {
+    backgroundColor: 'rgba(251, 191, 36, 0.1)', // Light Laudate golden background
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+  },
+  landscapePlaylistOverlay: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 15,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 8,
+    padding: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  landscapePlaylistIndicator: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  landscapePlaylistControls: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  landscapeControlButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(251, 191, 36, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.5)',
   },
   
   // Audio Player Styles

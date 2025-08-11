@@ -3,17 +3,17 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   ScrollView,
   TouchableOpacity,
   Alert,
-  RefreshControl,
   Modal,
-  PanResponder,
+  FlatList,
   Animated,
-  Dimensions,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { 
   ArrowLeft, 
   Play, 
@@ -24,9 +24,11 @@ import {
   Music,
   Headphones,
   Video,
-  GripVertical,
+  Menu,
   X,
-  Check
+  Check,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { playlistService, Playlist, PlaylistItem } from '../../services/playlistService';
@@ -39,14 +41,11 @@ export default function PlaylistDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [playlistTracks, setPlaylistTracks] = useState<DownloadItem[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<DownloadItem | null>(null);
   const [mediaViewerVisible, setMediaViewerVisible] = useState(false);
   const [showContentSelector, setShowContentSelector] = useState(false);
   const [availableContent, setAvailableContent] = useState<DownloadItem[]>([]);
-  const [dragging, setDragging] = useState(false);
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dragY] = useState(new Animated.Value(0));
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -85,11 +84,6 @@ export default function PlaylistDetailScreen() {
     setAvailableContent(audioVideoContent);
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadPlaylist();
-    setRefreshing(false);
-  };
 
   const handlePlayPlaylist = async (shuffle: boolean = false) => {
     if (!playlist || playlist.items.length === 0) {
@@ -149,52 +143,29 @@ export default function PlaylistDetailScreen() {
     );
   };
 
-  const createPanResponder = (index: number) => {
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      
-      onPanResponderGrant: () => {
-        setDragging(true);
-        setDraggedIndex(index);
-        dragY.setValue(0);
-      },
-      
-      onPanResponderMove: (_, gestureState) => {
-        dragY.setValue(gestureState.dy);
-      },
-      
-      onPanResponderRelease: async (_, gestureState) => {
-        if (!playlist) {
-          setDragging(false);
-          setDraggedIndex(null);
-          dragY.setValue(0);
-          return;
-        }
-        
-        const itemHeight = 100; // Approximate height of each track item
-        const moveDistance = Math.round(gestureState.dy / itemHeight);
-        const newIndex = Math.max(0, Math.min(playlistTracks.length - 1, index + moveDistance));
-        
-        if (newIndex !== index && Math.abs(gestureState.dy) > 20) {
-          await playlistService.reorderPlaylistItems(playlist.id, index, newIndex);
-          loadPlaylist();
-        }
-        
-        // Reset drag state
-        Animated.spring(dragY, {
-          toValue: 0,
-          useNativeDriver: true,
-        }).start(() => {
-          setDragging(false);
-          setDraggedIndex(null);
-        });
-      },
-    });
-  };
 
   const handleAddContent = () => {
     setShowContentSelector(true);
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    loadPlaylist();
+    setRefreshing(false);
+  };
+
+  const moveTrackUp = async (index: number) => {
+    if (!playlist || index === 0) return;
+    
+    await playlistService.reorderPlaylistItems(playlist.id, index, index - 1);
+    loadPlaylist();
+  };
+
+  const moveTrackDown = async (index: number) => {
+    if (!playlist || index === playlistTracks.length - 1) return;
+    
+    await playlistService.reorderPlaylistItems(playlist.id, index, index + 1);
+    loadPlaylist();
   };
 
   const handleAddToPlaylist = async (downloadId: string) => {
@@ -224,8 +195,11 @@ export default function PlaylistDetailScreen() {
   };
 
   const handleTrackChange = (newItem: DownloadItem) => {
+    console.log('Track change requested:', newItem.title, newItem.contentType);
+    
+    // Direct transition - just update the item
+    // The EnhancedMediaViewer will handle content type changes internally
     setSelectedItem(newItem);
-    // The media viewer will remain open and show the new track
   };
 
   const formatDate = (dateString: string): string => {
@@ -257,8 +231,9 @@ export default function PlaylistDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton} 
           onPress={() => router.back()}
@@ -303,7 +278,7 @@ export default function PlaylistDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      {playlist.items.length === 0 ? (
+      {playlistTracks.length === 0 ? (
         <View style={styles.emptyState}>
           <Music size={64} color={theme.colors.textSecondary} />
           <Text style={styles.emptyTitle}>No Tracks Yet</Text>
@@ -328,60 +303,59 @@ export default function PlaylistDetailScreen() {
           renderItem={({ item: track, index }) => {
             if (!track) return null;
             
-            const panResponder = createPanResponder(index);
-            const isDraggedItem = draggedIndex === index;
-            
             return (
-              <Animated.View
-                style={[
-                  styles.trackItem,
-                  isDraggedItem && {
-                    transform: [{ translateY: dragY }],
-                    opacity: dragging ? 0.8 : 1,
-                    elevation: dragging ? 10 : 0,
-                    shadowOpacity: dragging ? 0.3 : 0,
-                  }
-                ]}
-              >
-                <TouchableOpacity
-                  style={styles.trackContent}
-                  onPress={() => handlePlayTrack(track, index)}
-                  disabled={dragging}
-                >
-                  <View style={styles.trackNumber}>
-                    <Text style={styles.trackNumberText}>{index + 1}</Text>
-                  </View>
-                  
-                  <View style={styles.trackIcon}>
-                    {getContentIcon(track.contentType)}
-                  </View>
-                  
-                  <View style={styles.trackInfo}>
-                    <Text style={styles.trackTitle} numberOfLines={2}>
-                      {track.title || 'Untitled'}
-                    </Text>
-                    <Text style={styles.trackMeta}>
-                      {track.platform.charAt(0).toUpperCase() + track.platform.slice(1)} • {track.contentType}
-                      {track.status !== 'completed' && ` • ${track.status}`}
-                    </Text>
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={styles.trackRemoveButton}
-                    onPress={() => handleRemoveFromPlaylist(track.id, track.title || 'Untitled')}
-                    disabled={dragging}
+              <View style={styles.trackItem}>
+                <View style={styles.trackContent}>
+                  <TouchableOpacity
+                    style={styles.trackMain}
+                    onPress={() => handlePlayTrack(track, index)}
                   >
-                    <Trash2 size={16} color={theme.colors.error} />
+                    <View style={styles.trackNumber}>
+                      <Text style={styles.trackNumberText}>{index + 1}</Text>
+                    </View>
+                    
+                    <View style={styles.trackIcon}>
+                      {getContentIcon(track.contentType)}
+                    </View>
+                    
+                    <View style={styles.trackInfo}>
+                      <Text style={styles.trackTitle} numberOfLines={2}>
+                        {track.title || 'Untitled'}
+                      </Text>
+                      <Text style={styles.trackMeta}>
+                        {track.platform.charAt(0).toUpperCase() + track.platform.slice(1)} • {track.contentType}
+                        {track.status !== 'completed' && ` • ${track.status}`}
+                      </Text>
+                    </View>
                   </TouchableOpacity>
-                </TouchableOpacity>
-                
-                <View 
-                  style={[styles.trackDragHandle, isDraggedItem && styles.trackDragHandleActive]}
-                  {...panResponder.panHandlers}
-                >
-                  <GripVertical size={16} color={isDraggedItem ? theme.colors.primary : theme.colors.textSecondary} />
+                  
+                  <View style={styles.trackActions}>
+                    <TouchableOpacity 
+                      style={styles.trackRemoveButton}
+                      onPress={() => handleRemoveFromPlaylist(track.id, track.title || 'Untitled')}
+                    >
+                      <Trash2 size={16} color={theme.colors.error} />
+                    </TouchableOpacity>
+                    
+                    <View style={styles.reorderButtons}>
+                      <TouchableOpacity 
+                        style={[styles.reorderButton, index === 0 && styles.reorderButtonDisabled]}
+                        onPress={() => moveTrackUp(index)}
+                        disabled={index === 0}
+                      >
+                        <ArrowUp size={14} color={index === 0 ? theme.colors.textTertiary : theme.colors.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={[styles.reorderButton, index === playlistTracks.length - 1 && styles.reorderButtonDisabled]}
+                        onPress={() => moveTrackDown(index)}
+                        disabled={index === playlistTracks.length - 1}
+                      >
+                        <ArrowDown size={14} color={index === playlistTracks.length - 1 ? theme.colors.textTertiary : theme.colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
-              </Animated.View>
+              </View>
             );
           }}
         />
@@ -481,7 +455,8 @@ export default function PlaylistDetailScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -639,11 +614,29 @@ const createStyles = (theme: any) => StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  trackItemActive: {
+    backgroundColor: '#f8f9fa',
+    borderColor: theme.colors.primary,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
   trackContent: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    paddingRight: 8,
+  },
+  trackMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  trackActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   trackNumber: {
     width: 32,
@@ -696,21 +689,30 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderColor: theme.colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
   },
-  trackDragHandle: {
-    position: 'absolute',
-    right: 8,
-    top: 0,
-    bottom: 0,
-    width: 40,
+  reorderButtons: {
+    flexDirection: 'column',
+    marginLeft: 8,
+  },
+  reorderButton: {
+    width: 32,
+    height: 18,
+    borderRadius: 8,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'transparent',
+    marginBottom: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  trackDragHandleActive: {
+  reorderButtonDisabled: {
+    opacity: 0.4,
     backgroundColor: theme.colors.surface,
-    borderRadius: 8,
   },
   modalContainer: {
     flex: 1,

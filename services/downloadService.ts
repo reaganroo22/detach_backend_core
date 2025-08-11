@@ -334,46 +334,33 @@ class DownloadService {
 
       console.log('Starting download from URL:', downloadUrl);
       
-      // For audio files (especially podcasts), use server URL directly instead of downloading locally
-      if (item.contentType === 'audio') {
-        console.log('Audio file detected - using server URL for better streaming performance');
-        
-        // Clear the progress interval
-        clearInterval(progressInterval);
-        
-        item.status = 'completed';
-        item.progress = 100;
-        item.filePath = downloadUrl; // Use server URL directly for audio
-        item.downloadedAt = new Date().toISOString();
-      } else {
-        // For videos and images, download locally
-        console.log('Saving to path:', filePath);
-        
-        const downloadResult = await FileSystem.downloadAsync(
-          downloadUrl,
-          filePath,
-          {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+      // Download all files locally for better offline access and performance
+      console.log('Downloading file locally to path:', filePath);
+      
+      const downloadResult = await FileSystem.downloadAsync(
+        downloadUrl,
+        filePath,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
           }
-        );
-        
-        console.log('Download result:', downloadResult);
-        
-        // Check if file was actually downloaded
-        const fileInfo = await FileSystem.getInfoAsync(filePath);
-        console.log('Downloaded file info:', fileInfo);
+        }
+      );
+      
+      console.log('Download result:', downloadResult);
+      
+      // Check if file was actually downloaded
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      console.log('Downloaded file info:', fileInfo);
 
-        // Clear the progress interval
-        clearInterval(progressInterval);
+      // Clear the progress interval
+      clearInterval(progressInterval);
 
-        item.status = 'completed';
-        item.progress = 100;
-        // Use downloadResult.uri if available, otherwise use the original filePath
-        item.filePath = downloadResult?.uri || filePath;
-        item.downloadedAt = new Date().toISOString();
-      }
+      item.status = 'completed';
+      item.progress = 100;
+      // Use downloadResult.uri if available, otherwise use the original filePath
+      item.filePath = downloadResult?.uri || filePath;
+      item.downloadedAt = new Date().toISOString();
       
       this.downloads.set(id, item);
       await this.saveDownloadsToStorage();
@@ -446,19 +433,42 @@ class DownloadService {
             };
           }
         } else {
-          // For audio, use server URL directly
+          // For audio, also download locally for offline access
           const fileUrl = getFileUrl(response.data.filename);
-          return {
-            url: fileUrl,
-            metadata: {
-              title: response.data.title,
-              duration: response.data.duration,
-              uploader: response.data.uploader,
-              viewCount: response.data.viewCount,
-              actualFormat: response.data.contentType,
-              fileSize: response.data.fileSize
-            }
-          };
+          const localPath = `${this.downloadDirectory}${response.data.filename}`;
+          
+          // Download file to local storage for offline access
+          try {
+            console.log('Downloading YouTube audio locally from:', fileUrl);
+            console.log('Saving to local path:', localPath);
+            const downloadResult = await FileSystem.downloadAsync(fileUrl, localPath);
+            console.log('YouTube audio downloaded locally to:', downloadResult.uri);
+            return {
+              url: downloadResult.uri,
+              metadata: {
+                title: response.data.title,
+                duration: response.data.duration,
+                uploader: response.data.uploader,
+                viewCount: response.data.viewCount,
+                actualFormat: response.data.contentType,
+                fileSize: response.data.fileSize
+              }
+            };
+          } catch (localDownloadError) {
+            console.error('Failed to download YouTube audio locally, using server URL:', localDownloadError);
+            // Fallback to server URL if local download fails
+            return {
+              url: fileUrl,
+              metadata: {
+                title: response.data.title,
+                duration: response.data.duration,
+                uploader: response.data.uploader,
+                viewCount: response.data.viewCount,
+                actualFormat: response.data.contentType,
+                fileSize: response.data.fileSize
+              }
+            };
+          }
         }
       } else {
         // Fallback to old URL method (shouldn't happen with new backend)
@@ -511,7 +521,53 @@ class DownloadService {
       });
       
       console.log('YouTube Music API response:', response.status, response.data);
-      return { url: response.data.downloadUrl, metadata: response.data };
+      
+      // Check if backend downloaded the file directly
+      if (response.data.filePath && response.data.filename) {
+        // Download locally for offline access
+        const fileUrl = getFileUrl(response.data.filename);
+        console.log('YouTube Music - filename:', response.data.filename, 'fileUrl:', fileUrl);
+        const localPath = `${this.downloadDirectory}${response.data.filename}`;
+        
+        // Download file to local storage for offline access
+        try {
+          console.log('Downloading YouTube Music audio locally from:', fileUrl);
+          console.log('Saving to local path:', localPath);
+          const downloadResult = await FileSystem.downloadAsync(fileUrl, localPath);
+          console.log('YouTube Music audio downloaded locally to:', downloadResult.uri);
+          return {
+            url: downloadResult.uri,
+            metadata: {
+              title: response.data.title,
+              duration: response.data.duration,
+              uploader: response.data.artist,
+              album: response.data.album,
+              actualFormat: response.data.contentType,
+              fileSize: response.data.fileSize
+            }
+          };
+        } catch (localDownloadError) {
+          console.error('Failed to download YouTube Music audio locally, using server URL:', localDownloadError);
+          // Fallback to server URL if local download fails
+          return {
+            url: fileUrl,
+            metadata: {
+              title: response.data.title,
+              duration: response.data.duration,
+              uploader: response.data.artist,
+              album: response.data.album,
+              actualFormat: response.data.contentType,
+              fileSize: response.data.fileSize
+            }
+          };
+        }
+      } else {
+        // Fallback to old URL method
+        return {
+          url: response.data.downloadUrl,
+          metadata: response.data
+        };
+      }
       
     } catch (error) {
       console.error('YouTube Music download failed:', error);
@@ -537,7 +593,49 @@ class DownloadService {
       });
       
       console.log('Spotify API response:', response.status, response.data);
-      return { url: response.data.downloadUrl, metadata: response.data };
+      
+      // Check if backend downloaded the file directly
+      if (response.data.filePath && response.data.filename) {
+        // Download locally for offline access
+        const fileUrl = getFileUrl(response.data.filename);
+        console.log('Spotify - filename:', response.data.filename, 'fileUrl:', fileUrl);
+        const localPath = `${this.downloadDirectory}${response.data.filename}`;
+        
+        // Download file to local storage for offline access
+        try {
+          console.log('Downloading Spotify audio locally from:', fileUrl);
+          console.log('Saving to local path:', localPath);
+          const downloadResult = await FileSystem.downloadAsync(fileUrl, localPath);
+          console.log('Spotify audio downloaded locally to:', downloadResult.uri);
+          return {
+            url: downloadResult.uri,
+            metadata: {
+              title: response.data.title,
+              duration: response.data.duration,
+              actualFormat: response.data.contentType,
+              fileSize: response.data.fileSize
+            }
+          };
+        } catch (localDownloadError) {
+          console.error('Failed to download Spotify audio locally, using server URL:', localDownloadError);
+          // Fallback to server URL if local download fails
+          return {
+            url: fileUrl,
+            metadata: {
+              title: response.data.title,
+              duration: response.data.duration,
+              actualFormat: response.data.contentType,
+              fileSize: response.data.fileSize
+            }
+          };
+        }
+      } else {
+        // Fallback to old URL method
+        return {
+          url: response.data.downloadUrl,
+          metadata: response.data
+        };
+      }
       
     } catch (error) {
       console.error('Spotify download failed:', error);

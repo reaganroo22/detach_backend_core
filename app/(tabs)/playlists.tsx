@@ -228,8 +228,11 @@ export default function PlaylistsTab() {
   };
 
   const handleTrackChange = (newItem: DownloadItem) => {
+    console.log('Track change requested:', newItem.title, newItem.contentType);
+    
+    // Direct transition - just update the item
+    // The EnhancedMediaViewer will handle content type changes internally
     setCurrentTrackItem(newItem);
-    // The media viewer will remain open and show the new track
   };
 
   const formatCreatedDate = (dateString: string): string => {
