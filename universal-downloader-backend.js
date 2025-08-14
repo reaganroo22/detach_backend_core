@@ -49,8 +49,8 @@ const getBrowserConfig = () => {
   if (isDocker) {
     console.log('🐳 Docker environment detected - using system Chromium');
     return {
-      executablePath: '/usr/bin/chromium-browser',
-      headless: false, // Non-headless with virtual display
+      executablePath: '/usr/bin/chromium',
+      headless: true, // Force headless in production for stability
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-web-security',
@@ -63,7 +63,15 @@ const getBrowserConfig = () => {
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding',
         '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection'
+        '--disable-ipc-flooding-protection',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-images',
+        '--mute-audio',
+        '--disable-background-networking',
+        '--disable-sync',
+        '--metrics-recording-only',
+        '--disable-default-apps'
       ]
     };
   } else {
@@ -84,10 +92,20 @@ const getBrowserConfig = () => {
 async function tryGetLoady(url, platform) {
   console.log(`🔄 Tier 1: Trying GetLoady for ${platform}...`);
   
-  const browserConfig = getBrowserConfig();
-  const browser = browserConfig.wsEndpoint 
-    ? await chromium.connect(browserConfig.wsEndpoint)
-    : await chromium.launch(browserConfig);
+  let browser;
+  try {
+    const browserConfig = getBrowserConfig();
+    console.log('🌐 Browser config:', JSON.stringify(browserConfig, null, 2));
+    
+    browser = browserConfig.wsEndpoint 
+      ? await chromium.connect(browserConfig.wsEndpoint)
+      : await chromium.launch(browserConfig);
+    
+    console.log('✅ Browser launched successfully');
+  } catch (error) {
+    console.error('❌ Browser launch failed:', error.message);
+    return { success: false, error: `Browser launch failed: ${error.message}` };
+  }
   
   try {
     const context = await browser.newContext({
@@ -771,13 +789,22 @@ app.post('/download', async (req, res) => {
   
   try {
     // Tier 1: GetLoady
-    const tier1Result = await tryGetLoady(cleanUrl, platform);
-    results.tiers.push({ tier: 1, source: 'getloady', ...tier1Result });
-    
-    if (tier1Result.success) {
-      results.success = true;
-      results.data = tier1Result.data;
-      return res.json(results);
+    console.log('🚀 Starting Tier 1: GetLoady...');
+    try {
+      const tier1Result = await Promise.race([
+        tryGetLoady(cleanUrl, platform),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Tier 1 timeout')), 60000))
+      ]);
+      results.tiers.push({ tier: 1, source: 'getloady', ...tier1Result });
+      
+      if (tier1Result.success) {
+        results.success = true;
+        results.data = tier1Result.data;
+        return res.json(results);
+      }
+    } catch (error) {
+      console.error('❌ Tier 1 failed:', error.message);
+      results.tiers.push({ tier: 1, source: 'getloady', success: false, error: error.message });
     }
     
     // Tier 2: SSVid.net
