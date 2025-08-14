@@ -94,7 +94,7 @@ async function tryGetLoady(url, platform) {
     const page = await context.newPage();
     const capturedUrls = [];
     
-    // Monitor new tabs for Google Video URLs
+    // Monitor both new tabs (Google Video URLs) and downloads (direct files)
     context.on('page', async (newPage) => {
       await newPage.waitForLoadState('networkidle').catch(() => {});
       const newUrl = newPage.url();
@@ -109,6 +109,19 @@ async function tryGetLoady(url, platform) {
           timestamp: new Date().toISOString()
         });
       }
+    });
+    
+    // Monitor downloads (for Instagram and other platforms)
+    page.on('download', async download => {
+      console.log('📥 GetLoady: Download file intercepted!');
+      capturedUrls.push({
+        tier: 1,
+        source: 'getloady',
+        type: 'download_file',
+        url: download.url(),
+        filename: download.suggestedFilename(),
+        timestamp: new Date().toISOString()
+      });
     });
     
     // Navigate to GetLoady platform page
@@ -178,6 +191,7 @@ async function tryGetLoady(url, platform) {
     await page.waitForTimeout(8000);
     
     // Look for Download button and click (specifically "Download" not just any button)
+    // But stop if we already captured content
     const downloadSelectors = [
       'button:has-text("Download")',
       'button:has-text("download")',
@@ -187,24 +201,47 @@ async function tryGetLoady(url, platform) {
     ];
     
     let downloadClicked = false;
-    for (const selector of downloadSelectors) {
-      try {
-        const downloadBtn = await page.locator(selector).first();
-        if (await downloadBtn.isVisible()) {
-          await downloadBtn.click();
-          console.log(`✅ GetLoady: Download button clicked with selector: ${selector}`);
-          downloadClicked = true;
-          await page.waitForTimeout(5000);
-          break;
+    if (capturedUrls.length === 0) {
+      for (const selector of downloadSelectors) {
+        try {
+          const downloadBtn = await page.locator(selector).first();
+          if (await downloadBtn.isVisible()) {
+            await downloadBtn.click();
+            console.log(`✅ GetLoady: Download button clicked with selector: ${selector}`);
+            downloadClicked = true;
+            await page.waitForTimeout(5000);
+            break;
+          }
+        } catch (e) {
+          console.log(`⚠️ GetLoady: Download selector ${selector} failed, trying next...`);
+          continue;
         }
-      } catch (e) {
-        console.log(`⚠️ GetLoady: Download selector ${selector} failed, trying next...`);
-        continue;
       }
+    } else {
+      console.log('✅ GetLoady: Content already captured, skipping download button');
     }
     
     if (!downloadClicked) {
       console.log('⚠️ GetLoady: No Download button found');
+    }
+    
+    // Wait up to 45 seconds for new tab with Google Video URL or download files
+    if (downloadClicked || capturedUrls.length > 0) {
+      console.log('⏳ GetLoady: Waiting for Google Video URL or download files...');
+      const maxWaitTime = 45000; // 45 seconds
+      const checkInterval = 3000; // 3 seconds
+      const startTime = Date.now();
+      
+      while (Date.now() - startTime < maxWaitTime && capturedUrls.length === 0) {
+        await page.waitForTimeout(checkInterval);
+        console.log(`⏳ GetLoady: Still waiting for content... (${Math.round((Date.now() - startTime) / 1000)}s)`);
+      }
+      
+      if (capturedUrls.length > 0) {
+        console.log('🎯 GetLoady: Content successfully captured!');
+      } else {
+        console.log('⚠️ GetLoady: Timeout waiting for content');
+      }
     }
     
     await browser.close();
