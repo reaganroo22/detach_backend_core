@@ -1,11 +1,17 @@
 import 'react-native-url-polyfill/auto'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createClient } from '@supabase/supabase-js'
+import Constants from 'expo-constants'
 
-const supabaseUrl = 'https://eqxbfambjcrmbxbkybuu.supabase.co'
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxeGJmYW1iamNybWJ4Ymt5YnV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ1MjM3NTMsImV4cCI6MjA3MDA5OTc1M30.Rk-KZB43KZm_rt0H8uVx9i-tdoHA3qY-l3i-fXfPVe4'
+const extra = (Constants.expoConfig?.extra || (Constants.manifest as any)?.extra || {}) as any
+const supabaseUrl = extra.supabaseUrl || process.env.EXPO_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = extra.supabaseAnonKey || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('Supabase environment missing: ensure EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are set in app config')
+}
+
+export const supabase = createClient(String(supabaseUrl || ''), String(supabaseAnonKey || ''), {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,

@@ -1,16 +1,32 @@
+import Constants from 'expo-constants';
+
 // API Configuration
 const isDevelopment = __DEV__;
 
+// Backend URL configuration with environment support
+const getBackendUrl = () => {
+  const extra = (Constants.expoConfig?.extra || (Constants.manifest as any)?.extra || {}) as any;
+  const envUrl = extra.apiBaseUrl || process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    return envUrl.trim();
+  }
+
+  // Fallbacks if no env provided
+  if (isDevelopment) {
+    return 'http://localhost:3003';
+  }
+  return 'https://detachbackendcore-production.up.railway.app';
+};
+
 export const API_CONFIG = {
-  // Use Universal Backend with 6-tier fallback system
-  // Force production backend for physical device testing
-  BASE_URL: 'https://detachbackendcore-production.up.railway.app',
+  // Dynamic backend URL based on environment
+  BASE_URL: getBackendUrl(),
   
   // API endpoints for universal backend
   ENDPOINTS: {
-    HEALTH: '/health',
-    DOWNLOAD: '/download', // Universal endpoint for all platforms
-    PLATFORMS: '/platforms', // Get supported platforms
+    HEALTH: '/api/health', // Corrected path
+    DOWNLOAD: '/api/download', // Universal endpoint for all platforms
+    PLATFORMS: '/api/platforms', // Get supported platforms
     FILE: '/file' // File serving endpoint
   },
   

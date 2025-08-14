@@ -62,6 +62,8 @@ interface ThemeContextType {
   theme: Theme;
   settings: AppSettings;
   updateTheme: () => void;
+  toggleTheme: () => Promise<void>;
+  isDarkMode: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -106,8 +108,17 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     setTheme(settings.darkMode ? darkTheme : lightTheme);
   };
 
+  const toggleTheme = async () => {
+    try {
+      await settingsService.updateSetting('darkMode', !settings.darkMode);
+      // settingsService subscription will update local state and theme
+    } catch (error) {
+      console.error('Failed to toggle theme:', error);
+    }
+  };
+
   return (
-    <ThemeContext.Provider value={{ theme, settings, updateTheme }}>
+    <ThemeContext.Provider value={{ theme, settings, updateTheme, toggleTheme, isDarkMode: settings.darkMode }}>
       {children}
     </ThemeContext.Provider>
   );

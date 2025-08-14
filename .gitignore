@@ -30,12 +30,16 @@ yarn-error.*
 # local env files
 .env*.local
 .env
+.env.production
+.env.development
+.env.staging
 
 # typescript
 *.tsbuildinfo
 
 # detach backend
 detach_backend/
+detach_backend_core/
 
 # homepage images
 squidlr-homepage.png
