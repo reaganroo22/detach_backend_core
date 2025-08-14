@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.local
+.env.production
+downloads/*
+!downloads/.gitkeep
+*.log
+.DS_Store
+.vscode/
+.idea/
+.vercel

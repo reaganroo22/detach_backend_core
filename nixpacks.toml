@@ -1,0 +1,16 @@
+[phases.setup]
+nixPkgs = [
+  "nodejs", 
+  "python3", 
+  "python3Packages.pip",
+  "ffmpeg"
+]
+
+[phases.install]
+cmds = [
+  "npm ci",
+  "pip3 install --user --break-system-packages yt-dlp spotdl"
+]
+
+[start]
+cmd = "npm start"
