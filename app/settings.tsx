@@ -37,13 +37,13 @@ export default function SettingsScreen() {
   }, []);
 
   const loadSettings = async () => {
-    const settings = await settingsService.getSettings();
+    const settings = settingsService.getSettings();
     setAutoDownload(settings.autoDownload);
   };
 
   const handleAutoDownloadToggle = async (value: boolean) => {
     setAutoDownload(value);
-    await settingsService.updateSettings({ autoDownload: value });
+    await settingsService.updateSetting('autoDownload', value);
   };
 
   const handleSignOut = () => {

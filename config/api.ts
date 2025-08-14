@@ -11,11 +11,8 @@ const getBackendUrl = () => {
     return envUrl.trim();
   }
 
-  // Fallbacks if no env provided
-  if (isDevelopment) {
-    return 'http://localhost:3003';
-  }
-  return 'https://detachbackendcore-production.up.railway.app';
+  // Use production backend for all environments
+  return 'https://detach-backend-core.fly.dev';
 };
 
 export const API_CONFIG = {
@@ -24,9 +21,9 @@ export const API_CONFIG = {
   
   // API endpoints for universal backend
   ENDPOINTS: {
-    HEALTH: '/api/health', // Corrected path
-    DOWNLOAD: '/api/download', // Universal endpoint for all platforms
-    PLATFORMS: '/api/platforms', // Get supported platforms
+    HEALTH: '/health', // Health endpoint
+    DOWNLOAD: '/download', // Universal endpoint for all platforms
+    PLATFORMS: '/platforms', // Get supported platforms
     FILE: '/file' // File serving endpoint
   },
   

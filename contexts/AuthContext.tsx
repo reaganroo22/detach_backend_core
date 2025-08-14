@@ -40,10 +40,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Configure Google Sign-In for Supabase integration
     if (GoogleSignin) {
+      // Prefer env/config-driven IDs
+      const Constants = require('expo-constants').default;
+      const extra = (Constants.expoConfig?.extra || (Constants.manifest as any)?.extra || {}) as any;
       GoogleSignin.configure({
-        webClientId: '853021963659-e42d9v8klqddiibodqm2bids30c3tftr.apps.googleusercontent.com', // Your Google Cloud Console web client ID
-        iosClientId: '853021963659-e42d9v8klqddiibodqm2bids30c3tftr.apps.googleusercontent.com', // Your iOS client ID
-        offlineAccess: false, // No need for offline access with Supabase
+        webClientId: extra.googleWebClientId || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || undefined,
+        iosClientId: extra.googleIosClientId || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || undefined,
+        offlineAccess: false,
       });
     }
   }, []);

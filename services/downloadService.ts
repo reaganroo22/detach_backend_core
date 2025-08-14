@@ -27,6 +27,11 @@ export interface DownloadItem {
   uploader?: string;
   viewCount?: number;
   actualFormat?: 'audio' | 'video'; // What was actually downloaded
+  // 6-Tier System Information
+  downloadTier?: number; // Which tier succeeded (1-6)
+  downloadSource?: string; // Source name (getloady, ssvid, etc.)
+  tierInfo?: string; // Human readable tier info
+  allTierResults?: Array<{tier: number, source: string, success: boolean}>; // All attempted tiers
   // Playlist-specific fields
   isPlaylist?: boolean;
   playlistPath?: string;
@@ -213,9 +218,12 @@ class DownloadService {
 
   private async testBackendConnectivity(): Promise<boolean> {
     try {
-      const response = await axios.get(getApiUrl(API_CONFIG.ENDPOINTS.HEALTH), {
-        timeout: 5000
+      const healthUrl = getApiUrl(API_CONFIG.ENDPOINTS.HEALTH);
+      console.log('🔍 Testing backend connectivity to:', healthUrl);
+      const response = await axios.get(healthUrl, {
+        timeout: 15000 // Increased timeout for cold starts
       });
+      console.log('✅ Backend health check passed:', response.status);
       return response.status === 200;
     } catch (error) {
       console.error('Backend connectivity test failed:', error);
@@ -273,6 +281,20 @@ class DownloadService {
         item.actualFormat = metadata.actualFormat;
         // Update contentType based on what was actually downloaded
         item.contentType = metadata.actualFormat;
+      }
+      
+      // Store tier information for user visibility
+      if (metadata.tier) {
+        item.downloadTier = metadata.tier;
+        item.downloadSource = metadata.source;
+        item.tierInfo = metadata.tierInfo;
+        console.log(`📊 Downloaded via ${metadata.tierInfo} using ${metadata.downloadMethod}`);
+      }
+      
+      // Store all tier attempt results for debugging
+      if (metadata.allTiers) {
+        item.allTierResults = metadata.allTiers;
+        console.log(`🎯 Tier Results: ${metadata.allTiers.map((t: any) => `${t.source}(${t.success ? '✅' : '❌'})`).join(', ')}`);
       }
       
       // Simplified - no playlist handling, all downloads are individual files
@@ -341,9 +363,12 @@ class DownloadService {
 
   private async getUniversalDownloadUrl(url: string): Promise<{url: string, metadata: any} | null> {
     try {
+      const apiUrl = getApiUrl(API_CONFIG.ENDPOINTS.DOWNLOAD);
       console.log('🚀 Using Universal Backend with 6-tier fallback system for:', url);
+      console.log('📡 API URL:', apiUrl);
+      console.log('🔗 Base URL:', API_CONFIG.BASE_URL);
       
-      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.DOWNLOAD), {
+      const response = await axios.post(apiUrl, {
         url: url
       }, {
         timeout: 180000, // 3 minutes timeout for tier processing
@@ -373,7 +398,11 @@ class DownloadService {
             filename: downloadItem.filename,
             platform: response.data.platform,
             tier: downloadItem.tier,
-            source: downloadItem.source
+            source: downloadItem.source,
+            tierInfo: `Tier ${downloadItem.tier}: ${downloadItem.source}`,
+            allTiers: response.data.tiers, // Include info about all attempted tiers
+            successfulTier: downloadItem.tier,
+            downloadMethod: downloadItem.type || 'download_file'
           }
         };
       } else {
