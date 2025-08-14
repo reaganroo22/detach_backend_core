@@ -3,7 +3,8 @@ const isDevelopment = __DEV__;
 
 export const API_CONFIG = {
   // Use Universal Backend with 6-tier fallback system
-  BASE_URL: isDevelopment ? 'http://192.168.1.239:3000' : 'https://detachbackendcore-production.up.railway.app',
+  // Force production backend for physical device testing
+  BASE_URL: 'https://detachbackendcore-production.up.railway.app',
   
   // API endpoints for universal backend
   ENDPOINTS: {

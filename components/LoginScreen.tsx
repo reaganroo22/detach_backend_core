@@ -261,36 +261,6 @@ export default function LoginScreen() {
           </TouchableOpacity>
         ) : null}
 
-        {/* Google Sign-In Button */}
-        {GoogleSigninButton ? (
-          <View style={styles.googleButtonWrapper}>
-            <GoogleSigninButton
-              size={GoogleSigninButton.Size.Wide}
-              color={GoogleSigninButton.Color.Light}
-              onPress={handleGoogleSignIn}
-              disabled={googleLoading || appleLoading}
-              style={[styles.googleButton, googleLoading && styles.googleButtonDisabled]}
-            />
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.googleButtonFallback,
-              googleLoading && styles.googleButtonDisabled,
-            ]}
-            onPress={handleGoogleSignIn}
-            disabled={googleLoading || appleLoading}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color="#3c4043" size="small" />
-            ) : (
-              <>
-                <GoogleIcon size={18} />
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
 
         <Text style={styles.signInRequiredText}>
           Sign in is required to sync your downloads across devices and access cloud features.

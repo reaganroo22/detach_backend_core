@@ -33,3 +33,10 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# detach backend
+detach_backend/
+
+# homepage images
+squidlr-homepage.png
+ssvid-homepage.png
