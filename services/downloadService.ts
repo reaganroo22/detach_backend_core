@@ -238,42 +238,8 @@ class DownloadService {
       this.downloads.set(id, item);
       await this.saveDownloadsToStorage();
 
-      let downloadData: {url: string, metadata?: any} | string | null = null;
-      
-      switch (item.platform) {
-        case 'youtube':
-          downloadData = await this.getYouTubeDownloadUrl(item.url);
-          break;
-        case 'youtube-music':
-          downloadData = await this.getYouTubeMusicDownloadUrl(item.url);
-          break;
-        case 'spotify':
-          downloadData = await this.getSpotifyDownloadUrl(item.url);
-          break;
-        case 'instagram':
-          downloadData = await this.getInstagramDownloadUrl(item.url);
-          break;
-        case 'tiktok':
-          downloadData = await this.getTikTokDownloadUrl(item.url);
-          break;
-        case 'twitter':
-          downloadData = await this.getTwitterDownloadUrl(item.url);
-          break;
-        case 'podcast':
-          downloadData = await this.getPodcastDownloadUrl(item.url);
-          break;
-        case 'facebook':
-          downloadData = await this.getFacebookDownloadUrl(item.url);
-          break;
-        case 'linkedin':
-          downloadData = await this.getLinkedInDownloadUrl(item.url);
-          break;
-        case 'pinterest':
-          downloadData = await this.getPinterestDownloadUrl(item.url);
-          break;
-        default:
-          throw new Error(`Platform ${item.platform} not yet implemented`);
-      }
+      // Use universal backend with 6-tier fallback system
+      const downloadData = await this.getUniversalDownloadUrl(item.url);
 
       if (!downloadData) {
         throw new Error('Could not get download URL');
@@ -370,6 +336,53 @@ class DownloadService {
       item.status = 'failed';
       this.downloads.set(id, item);
       await this.saveDownloadsToStorage();
+    }
+  }
+
+  private async getUniversalDownloadUrl(url: string): Promise<{url: string, metadata: any} | null> {
+    try {
+      console.log('🚀 Using Universal Backend with 6-tier fallback system for:', url);
+      
+      const response = await axios.post(getApiUrl(API_CONFIG.ENDPOINTS.DOWNLOAD), {
+        url: url
+      }, {
+        timeout: 180000, // 3 minutes timeout for tier processing
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data?.success && response.data?.data?.length > 0) {
+        const downloadItem = response.data.data[0]; // Get first successful result
+        console.log(`✅ Universal Backend Success: Tier ${downloadItem.tier} (${downloadItem.source})`);
+        console.log('📱 Platform detected:', response.data.platform);
+        console.log('🎯 Tiers attempted:', response.data.tiers.length);
+        
+        // Log tier results for debugging
+        response.data.tiers.forEach((tier: any) => {
+          const status = tier.success ? '✅' : '❌';
+          console.log(`   ${status} Tier ${tier.tier} (${tier.source}): ${tier.success ? 'SUCCESS' : 'FAILED'}`);
+        });
+
+        return {
+          url: downloadItem.url,
+          metadata: {
+            title: downloadItem.title || response.data.platform + ' content',
+            duration: downloadItem.duration,
+            uploader: downloadItem.uploader,
+            filename: downloadItem.filename,
+            platform: response.data.platform,
+            tier: downloadItem.tier,
+            source: downloadItem.source
+          }
+        };
+      } else {
+        console.log('❌ Universal Backend: All tiers failed');
+        throw new Error('All download tiers failed');
+      }
+    } catch (error: any) {
+      console.log('❌ Universal Backend Error:', error.message);
+      throw error;
     }
   }
 

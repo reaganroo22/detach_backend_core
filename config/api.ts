@@ -2,12 +2,19 @@
 const isDevelopment = __DEV__;
 
 export const API_CONFIG = {
-  // Use production backend URL from Railway
-  BASE_URL: 'https://detachbackend-production.up.railway.app',
+  // Use Universal Backend with 6-tier fallback system
+  BASE_URL: isDevelopment ? 'http://192.168.1.239:3000' : 'https://detachbackendcore-production.up.railway.app',
   
-  // API endpoints
+  // API endpoints for universal backend
   ENDPOINTS: {
-    HEALTH: '/api/health',
+    HEALTH: '/health',
+    DOWNLOAD: '/download', // Universal endpoint for all platforms
+    PLATFORMS: '/platforms', // Get supported platforms
+    FILE: '/file' // File serving endpoint
+  },
+  
+  // Legacy endpoints (kept for backward compatibility)
+  LEGACY_ENDPOINTS: {
     YOUTUBE: '/api/youtube',
     YOUTUBE_MUSIC: '/api/youtube-music',
     SPOTIFY: '/api/spotify',
@@ -17,8 +24,7 @@ export const API_CONFIG = {
     PODCAST: '/api/podcast',
     FACEBOOK: '/api/facebook',
     LINKEDIN: '/api/linkedin',
-    PINTEREST: '/api/pinterest',
-    FILE: '/api/file'
+    PINTEREST: '/api/pinterest'
   }
 };
 
