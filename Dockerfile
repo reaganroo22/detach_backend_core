@@ -8,10 +8,15 @@ ENV NODE_ENV=production
 RUN apk add --no-cache \
     python3 \
     py3-pip \
-    curl
+    curl \
+    && python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip
 
-# Install yt-dlp
-RUN pip3 install yt-dlp
+# Add virtual environment to PATH
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install yt-dlp in virtual environment
+RUN pip install yt-dlp
 
 # Set the working directory
 WORKDIR /app
