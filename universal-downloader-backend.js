@@ -40,28 +40,11 @@ const getBrowserConfig = () => {
     };
   }
   
-  // Railway production with virtual display
-  if (process.env.RAILWAY_UNIVERSAL_BACKEND && process.env.NODE_ENV === 'production') {
-    console.log('🚂 Railway production mode with virtual display');
+  // Railway production - use browserless.io free service
+  if (process.env.NODE_ENV === 'production') {
+    console.log('🚂 Production mode - using browserless.io service');
     return {
-      headless: false, // Use virtual display
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu',
-        '--display=' + (process.env.DISPLAY || ':99'),
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding'
-      ]
+      wsEndpoint: 'wss://chrome.browserless.io?token=free'
     };
   }
   

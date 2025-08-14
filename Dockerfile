@@ -1,18 +1,14 @@
-# Use official Playwright image with Node.js and browsers pre-installed
-FROM mcr.microsoft.com/playwright:v1.40.0-focal
+# Use lightweight Node.js image since we're using browserless.io
+FROM node:18-alpine
 
 # Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV DISPLAY=:99
 ENV NODE_ENV=production
 
-# Install additional dependencies for Railway
-RUN apt-get update && apt-get install -y \
+# Install dependencies for Alpine
+RUN apk add --no-cache \
     python3 \
-    python3-pip \
-    xvfb \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+    py3-pip \
+    curl
 
 # Install yt-dlp
 RUN pip3 install yt-dlp
@@ -26,27 +22,14 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci --only=production
 
-# Install Playwright browsers explicitly
-RUN npx playwright install chromium
-RUN npx playwright install-deps chromium
-
 # Copy the application code
 COPY . .
 
 # Create directories
 RUN mkdir -p /app/downloads
 
-# Create startup script
-RUN echo '#!/bin/bash\n\
-# Start Xvfb for virtual display\n\
-Xvfb :99 -screen 0 1920x1080x24 &\n\
-export DISPLAY=:99\n\
-\n\
-# Wait for display to be ready\n\
-sleep 2\n\
-\n\
-# Start the application\n\
-exec npm start' > /app/start.sh
+# Create startup script (no Xvfb needed with browserless.io)
+RUN echo '#!/bin/sh\necho "🚀 Starting Universal Backend with browserless.io"\nexec npm start' > /app/start.sh
 
 RUN chmod +x /app/start.sh
 
