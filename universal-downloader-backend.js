@@ -32,27 +32,47 @@ const detectPlatform = (url) => {
 const getBrowserConfig = () => {
   // Check if we're in production with browserless or docker
   if (process.env.BROWSERLESS_URL) {
+    console.log('🌐 Using Browserless service:', process.env.BROWSERLESS_URL);
     return {
       wsEndpoint: process.env.BROWSERLESS_URL
     };
   }
   
-  // Local development or docker with display
+  // Railway production with virtual display
+  if (process.env.RAILWAY_UNIVERSAL_BACKEND && process.env.NODE_ENV === 'production') {
+    console.log('🚂 Railway production mode with virtual display');
+    return {
+      headless: false, // Use virtual display
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu',
+        '--display=' + (process.env.DISPLAY || ':99'),
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding'
+      ]
+    };
+  }
+  
+  // Local development
+  console.log('💻 Local development mode');
   return {
-    headless: process.env.NODE_ENV === 'production' ? false : false, // Always use headed mode
+    headless: false,
     channel: 'chrome',
     args: [
       '--disable-blink-features=AutomationControlled',
       '--disable-web-security',
-      '--disable-features=VizDisplayCompositor',
       '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-gpu'
+      '--disable-setuid-sandbox'
     ]
   };
 };

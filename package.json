@@ -1,7 +1,7 @@
 {
-  "name": "social-media-downloader-backend",
+  "name": "universal-social-downloader-backend",
   "version": "1.0.0",
-  "description": "Backend service for social media content downloading",
+  "description": "Universal Social Media Downloader with 6-Tier Fallback System",
   "main": "universal-downloader-backend.js",
   "scripts": {
     "start": "node universal-downloader-backend.js",
