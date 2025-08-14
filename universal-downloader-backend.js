@@ -3,6 +3,8 @@ const { chromium } = require('playwright');
 const cors = require('cors');
 const axios = require('axios');
 const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -114,14 +116,40 @@ async function tryGetLoady(url, platform) {
     // Monitor downloads (for Instagram and other platforms)
     page.on('download', async download => {
       console.log('📥 GetLoady: Download file intercepted!');
-      capturedUrls.push({
-        tier: 1,
-        source: 'getloady',
-        type: 'download_file',
-        url: download.url(),
-        filename: download.suggestedFilename(),
-        timestamp: new Date().toISOString()
-      });
+      
+      // Save download to backend storage
+      const filename = download.suggestedFilename();
+      const downloadPath = path.join(__dirname, 'downloads', filename);
+      
+      try {
+        await download.saveAs(downloadPath);
+        console.log(`💾 GetLoady: File saved to ${downloadPath}`);
+        
+        // Return backend URL instead of blob URL
+        const baseUrl = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || 'http://localhost:3000';
+        const backendUrl = `${baseUrl}/file/${filename}`;
+        
+        capturedUrls.push({
+          tier: 1,
+          source: 'getloady',
+          type: 'download_file',
+          url: backendUrl,
+          filename: filename,
+          localPath: downloadPath,
+          timestamp: new Date().toISOString()
+        });
+      } catch (saveError) {
+        console.log('❌ GetLoady: Download save failed:', saveError.message);
+        // Fallback to original blob URL
+        capturedUrls.push({
+          tier: 1,
+          source: 'getloady',
+          type: 'download_file',
+          url: download.url(),
+          filename: filename,
+          timestamp: new Date().toISOString()
+        });
+      }
     });
     
     // Navigate to GetLoady platform page
@@ -276,15 +304,41 @@ async function trySSVid(url) {
     
     // Monitor downloads
     page.on('download', async download => {
-      console.log('📥 Download intercepted:', download.url());
-      capturedUrls.push({
-        tier: 2,
-        source: 'ssvid',
-        type: 'download_file',
-        url: download.url(),
-        filename: download.suggestedFilename(),
-        timestamp: new Date().toISOString()
-      });
+      console.log('📥 SSVid: Download intercepted:', download.url());
+      
+      // Save download to backend storage
+      const filename = download.suggestedFilename();
+      const downloadPath = path.join(__dirname, 'downloads', filename);
+      
+      try {
+        await download.saveAs(downloadPath);
+        console.log(`💾 SSVid: File saved to ${downloadPath}`);
+        
+        // Return backend URL instead of original URL
+        const baseUrl = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || 'http://localhost:3000';
+        const backendUrl = `${baseUrl}/file/${filename}`;
+        
+        capturedUrls.push({
+          tier: 2,
+          source: 'ssvid',
+          type: 'download_file',
+          url: backendUrl,
+          filename: filename,
+          localPath: downloadPath,
+          timestamp: new Date().toISOString()
+        });
+      } catch (saveError) {
+        console.log('❌ SSVid: Download save failed:', saveError.message);
+        // Fallback to original URL
+        capturedUrls.push({
+          tier: 2,
+          source: 'ssvid',
+          type: 'download_file',
+          url: download.url(),
+          filename: filename,
+          timestamp: new Date().toISOString()
+        });
+      }
     });
     
     await page.goto('https://ssvid.net/en', { waitUntil: 'networkidle' });
@@ -382,14 +436,41 @@ async function trySquidlr(url, platform) {
     
     // Monitor downloads and new tabs
     page.on('download', async download => {
-      capturedUrls.push({
-        tier: 3,
-        source: 'squidlr',
-        type: 'download_file',
-        url: download.url(),
-        filename: download.suggestedFilename(),
-        timestamp: new Date().toISOString()
-      });
+      console.log('📥 Squidlr: Download intercepted:', download.url());
+      
+      // Save download to backend storage
+      const filename = download.suggestedFilename();
+      const downloadPath = path.join(__dirname, 'downloads', filename);
+      
+      try {
+        await download.saveAs(downloadPath);
+        console.log(`💾 Squidlr: File saved to ${downloadPath}`);
+        
+        // Return backend URL instead of original URL
+        const baseUrl = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || 'http://localhost:3000';
+        const backendUrl = `${baseUrl}/file/${filename}`;
+        
+        capturedUrls.push({
+          tier: 3,
+          source: 'squidlr',
+          type: 'download_file',
+          url: backendUrl,
+          filename: filename,
+          localPath: downloadPath,
+          timestamp: new Date().toISOString()
+        });
+      } catch (saveError) {
+        console.log('❌ Squidlr: Download save failed:', saveError.message);
+        // Fallback to original URL
+        capturedUrls.push({
+          tier: 3,
+          source: 'squidlr',
+          type: 'download_file',
+          url: download.url(),
+          filename: filename,
+          timestamp: new Date().toISOString()
+        });
+      }
     });
     
     context.on('page', async (newPage) => {
@@ -758,6 +839,46 @@ app.post('/download', async (req, res) => {
     results.error = error.message;
     return res.status(500).json(results);
   }
+});
+
+// File serving endpoint for downloaded content
+app.get('/file/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(__dirname, 'downloads', filename);
+  
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  
+  // Set proper headers
+  const ext = path.extname(filename).toLowerCase();
+  const contentType = ext === '.mp4' ? 'video/mp4' : ext === '.mp3' ? 'audio/mpeg' : 'application/octet-stream';
+  
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  
+  // Send file
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      console.log('❌ File serve error:', err.message);
+      res.status(500).json({ error: 'File serve failed' });
+    } else {
+      console.log(`✅ File served: ${filename}`);
+      
+      // Cleanup file after 5 minutes to save storage
+      setTimeout(() => {
+        try {
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log(`🗑️ Cleaned up: ${filename}`);
+          }
+        } catch (cleanupErr) {
+          console.log(`⚠️ Cleanup failed: ${filename}`, cleanupErr.message);
+        }
+      }, 300000); // 5 minutes
+    }
+  });
 });
 
 // Health check endpoint
