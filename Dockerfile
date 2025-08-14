@@ -37,9 +37,16 @@ COPY . .
 RUN mkdir -p /app/downloads
 
 # Create startup script with virtual display
-RUN printf '#!/bin/sh\necho "🚀 Starting Universal Backend with local Chrome"\necho "📺 Starting virtual display..."\nXvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &\nsleep 2\necho "🌟 Starting backend..."\nexec npm start\n' > /app/start.sh
-
-RUN chmod +x /app/start.sh
+RUN echo '#!/bin/sh' > /app/start.sh && \
+    echo 'echo "🚀 Starting Universal Backend with local Chrome"' >> /app/start.sh && \
+    echo 'echo "📺 Starting virtual display..."' >> /app/start.sh && \
+    echo 'Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &' >> /app/start.sh && \
+    echo 'sleep 2' >> /app/start.sh && \
+    echo 'echo "🌟 Starting backend..."' >> /app/start.sh && \
+    echo 'exec npm start' >> /app/start.sh && \
+    chmod +x /app/start.sh && \
+    ls -la /app/start.sh && \
+    cat /app/start.sh
 
 # Expose the port
 EXPOSE 3000
