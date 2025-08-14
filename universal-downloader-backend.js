@@ -30,36 +30,54 @@ const detectPlatform = (url) => {
   return 'unknown';
 };
 
-// Browser configuration for production
+// Browser configuration - Use local Chrome browsers for better reliability
 const getBrowserConfig = () => {
-  // Check if we're in production with browserless or docker
+  // Check if we have a custom browserless URL
   if (process.env.BROWSERLESS_URL) {
-    console.log('🌐 Using Browserless service:', process.env.BROWSERLESS_URL);
+    console.log('🌐 Using custom Browserless service:', process.env.BROWSERLESS_URL);
     return {
       wsEndpoint: process.env.BROWSERLESS_URL
     };
   }
   
-  // Railway production - use browserless.io free service
-  if (process.env.NODE_ENV === 'production') {
-    console.log('🚂 Production mode - using browserless.io service');
+  // Default: Use local Chrome/Chromium browser for both development and production
+  console.log('💻 Using local Chrome browser (reliable for all environments)');
+  
+  // Docker vs local environment
+  const isDocker = process.env.NODE_ENV === 'production' || fs.existsSync('/.dockerenv');
+  
+  if (isDocker) {
+    console.log('🐳 Docker environment detected - using system Chromium');
     return {
-      wsEndpoint: 'wss://chrome.browserless.io?token=free'
+      executablePath: '/usr/bin/chromium-browser',
+      headless: false, // Non-headless with virtual display
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-background-timer-throttling',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection'
+      ]
+    };
+  } else {
+    console.log('💻 Local development - using system Chrome');
+    return {
+      headless: false, // Non-headless for better success rates
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
+        '--no-sandbox',
+        '--disable-setuid-sandbox'
+      ]
     };
   }
-  
-  // Local development
-  console.log('💻 Local development mode');
-  return {
-    headless: false,
-    channel: 'chrome',
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--disable-web-security',
-      '--no-sandbox',
-      '--disable-setuid-sandbox'
-    ]
-  };
 };
 
 // Tier 1: GetLoady

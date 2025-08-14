@@ -1,14 +1,17 @@
-# Use lightweight Node.js image since we're using browserless.io
+# Use Node.js image with support for local Chrome
 FROM node:18-alpine
 
 # Set environment variables
 ENV NODE_ENV=production
+ENV DISPLAY=:99
 
-# Install dependencies for Alpine
+# Install dependencies for Alpine including virtual display support
 RUN apk add --no-cache \
     python3 \
     py3-pip \
     curl \
+    xvfb \
+    chromium \
     && python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip
 
@@ -33,17 +36,17 @@ COPY . .
 # Create directories
 RUN mkdir -p /app/downloads
 
-# Create startup script (no Xvfb needed with browserless.io)
-RUN echo '#!/bin/sh\necho "🚀 Starting Universal Backend with browserless.io"\nexec npm start' > /app/start.sh
+# Create startup script with virtual display
+RUN printf '#!/bin/sh\necho "🚀 Starting Universal Backend with local Chrome"\necho "📺 Starting virtual display..."\nXvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &\nsleep 2\necho "🌟 Starting backend..."\nexec npm start\n' > /app/start.sh
 
 RUN chmod +x /app/start.sh
 
-# Expose the port (Railway uses PORT env var)
-EXPOSE $PORT
+# Expose the port
+EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-3000}/health || exit 1
+  CMD curl -f http://localhost:3000/health || exit 1
 
 # Start the application with virtual display
 CMD ["/app/start.sh"]
