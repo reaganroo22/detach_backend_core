@@ -4,7 +4,6 @@ FROM mcr.microsoft.com/playwright:v1.54.0-noble
 # Set environment variables
 ENV NODE_ENV=production
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV CHROME_BIN=/ms-playwright/chromium-1140/chrome-linux/chrome
 
 # Set the working directory
 WORKDIR /app

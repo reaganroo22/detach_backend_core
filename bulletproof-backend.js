@@ -74,12 +74,12 @@ const BULLETPROOF_APIS = [
 
 // Sample working URLs for immediate testing
 const SAMPLE_DOWNLOADS = {
-  youtube: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_2mb.mp4',
-  instagram: 'https://sample-videos.com/zip/10/mp4/SampleVideo_640x360_1mb.mp4',
-  tiktok: 'https://sample-videos.com/zip/10/mp4/SampleVideo_360x240_1mb.mp4',
-  twitter: 'https://sample-videos.com/zip/10/mp4/SampleVideo_480x360_1mb.mp4',
-  facebook: 'https://sample-videos.com/zip/10/mp4/SampleVideo_720x480_1mb.mp4',
-  default: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4'
+  youtube: 'https://www.w3schools.com/html/mov_bbb.mp4',
+  instagram: 'https://www.w3schools.com/html/mov_bbb.mp4',
+  tiktok: 'https://www.w3schools.com/html/mov_bbb.mp4',
+  twitter: 'https://www.w3schools.com/html/mov_bbb.mp4',
+  facebook: 'https://www.w3schools.com/html/mov_bbb.mp4',
+  default: 'https://www.w3schools.com/html/mov_bbb.mp4'
 };
 
 function detectPlatform(url) {
@@ -307,13 +307,13 @@ app.post('/download', async (req, res) => {
       
       console.log('🚀 Initializing browser automation...');
       const downloader = new ComprehensiveDownloaderSuite({
-        headless: process.env.HEADLESS !== 'false' ? 'new' : false
+        headless: process.env.HEADLESS !== 'false' ? 'new' : false,
         qualityPreference: 'highest',
         enableLogging: true,
         retryAttempts: 2,
         downloadTimeout: 90000, // 90 seconds - proper time for automation
         browserOptions: {
-          executablePath: process.env.CHROME_EXECUTABLE_PATH || (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/usr/bin/google-chrome'),
+          // Don't specify executablePath - let Playwright use its bundled Chrome
           args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -470,24 +470,14 @@ app.post('/download', async (req, res) => {
         });
       }
       
-      // Method 3: Final fallback with working sample
-      console.log(`📱 Using working sample as final fallback...`);
-      const sampleUrl = SAMPLE_DOWNLOADS[platform] || SAMPLE_DOWNLOADS.default;
+      // Method 3: Return error instead of fake sample
+      console.log(`❌ All download methods failed for ${platform}`);
       
-      res.json({
-        success: true,
+      return res.status(500).json({
+        success: false,
+        error: `Unable to download from ${platform}: ${browserError.message}`,
         url: url,
         platform: platform,
-        data: {
-          downloadUrl: sampleUrl,
-          method: 'fallback-sample',
-          service: 'bulletproof-backend',
-          quality: 'HD',
-          tier: 3,
-          tierName: 'Fallback Sample'
-        },
-        userPreferences: userPrefs,
-        note: 'Browser automation failed, using sample - contact support',
         timestamp: new Date().toISOString()
       });
     }
@@ -555,11 +545,11 @@ app.post('/download/batch', async (req, res) => {
         try {
           const ComprehensiveDownloaderSuite = require('./comprehensive-downloader-suite');
           const downloader = new ComprehensiveDownloaderSuite({
-            headless: process.env.HEADLESS !== 'false' ? 'new' : false
+            headless: process.env.HEADLESS !== 'false' ? 'new' : false,
             downloadTimeout: 90000, // 90 seconds per URL
             retryAttempts: 1,
             browserOptions: {
-              executablePath: process.env.CHROME_EXECUTABLE_PATH || (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/usr/bin/google-chrome'),
+              // Don't specify executablePath - let Playwright use its bundled Chrome
               args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',

@@ -7,7 +7,6 @@ primary_region = 'iad'
 [env]
   NODE_ENV = 'production'
   PORT = '3000'
-  CHROME_EXECUTABLE_PATH = '/ms-playwright/chromium-1140/chrome-linux/chrome'
   HEADLESS = 'true'
   DOWNLOADS_DIR = '/app/downloads'
 

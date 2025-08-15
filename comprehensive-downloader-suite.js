@@ -58,10 +58,7 @@ class ComprehensiveDownloaderSuite {
     // Production-grade browser configuration for Ubuntu/Fly.io
     const launchOptions = this.config.browserOptions || {
       headless: this.config.headless !== false ? 'new' : false, // Use new headless mode
-      executablePath: process.env.CHROME_EXECUTABLE_PATH || 
-        (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : 
-         process.env.NODE_ENV === 'production' ? '/ms-playwright/chromium-1140/chrome-linux/chrome' : 
-         '/usr/bin/google-chrome'),
+      // Don't specify executablePath - let Playwright use its bundled Chrome
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
