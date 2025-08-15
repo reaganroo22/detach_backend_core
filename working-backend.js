@@ -104,8 +104,11 @@ async function getBrowserDownloader() {
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'healthy',
+    version: 'yt-dlp-first-v2.0',
+    deployedAt: '2025-08-15T05:08:00Z',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    strategy: 'yt-dlp-first-browser-fallback'
   });
 });
 
