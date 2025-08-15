@@ -1,11 +1,12 @@
 {
   "name": "universal-social-downloader-backend",
-  "version": "1.0.0",
-  "description": "Universal Social Media Downloader with 6-Tier Fallback System",
-  "main": "universal-downloader-backend.js",
+  "version": "2.0.0",
+  "description": "Scalable Universal Social Media Downloader - Handles Millions of Concurrent Requests",
+  "main": "scalable-universal-backend.js",
   "scripts": {
-    "start": "node universal-downloader-backend.js",
-    "dev": "nodemon universal-downloader-backend.js",
+    "start": "node scalable-universal-backend.js",
+    "start:old": "node universal-downloader-backend.js",
+    "dev": "nodemon scalable-universal-backend.js",
     "build": "echo 'No build step needed'",
     "test": "node test-universal-system.js"
   },
@@ -21,7 +22,9 @@
     "node-fetch": "^3.3.2",
     "playwright": "^1.54.2",
     "playwright-extra": "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "redis": "^4.6.0",
+    "cluster": "^0.7.7"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
