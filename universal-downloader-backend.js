@@ -791,15 +791,13 @@ app.post('/download', async (req, res) => {
     // Tier 1: GetLoady
     console.log('🚀 Starting Tier 1: GetLoady...');
     try {
-      const tier1Result = await Promise.race([
-        tryGetLoady(cleanUrl, platform),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Tier 1 timeout')), 60000))
-      ]);
+      const tier1Result = await tryGetLoady(cleanUrl, platform);
       results.tiers.push({ tier: 1, source: 'getloady', ...tier1Result });
       
       if (tier1Result.success) {
         results.success = true;
         results.data = tier1Result.data;
+        console.log('✅ Tier 1 SUCCESS - returning immediately');
         return res.json(results);
       }
     } catch (error) {
