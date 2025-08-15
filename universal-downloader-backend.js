@@ -190,7 +190,7 @@ async function tryGetLoady(url, platform) {
     for (const selector of inputSelectors) {
       try {
         const input = await page.locator(selector);
-        await input.click({ timeout: 5000 });
+        await input.click({ timeout: 2000 });
         await input.fill('');
         await input.fill(url);
         await page.waitForTimeout(1000);
@@ -221,7 +221,7 @@ async function tryGetLoady(url, platform) {
     let startClicked = false;
     for (const selector of startSelectors) {
       try {
-        await page.click(selector, { timeout: 5000 });
+        await page.click(selector, { timeout: 2000 });
         console.log(`✅ GetLoady: Start button clicked with selector: ${selector}`);
         startClicked = true;
         break;
@@ -788,7 +788,7 @@ app.post('/download', async (req, res) => {
   };
   
   try {
-    // Tier 1: GetLoady
+    // Tier 1: GetLoady (browser automation works!)
     console.log('🚀 Starting Tier 1: GetLoady...');
     try {
       const tier1Result = await tryGetLoady(cleanUrl, platform);
@@ -797,7 +797,7 @@ app.post('/download', async (req, res) => {
       if (tier1Result.success) {
         results.success = true;
         results.data = tier1Result.data;
-        console.log('✅ Tier 1 SUCCESS - returning immediately');
+        console.log('✅ Tier 1 SUCCESS - GetLoady worked!');
         return res.json(results);
       }
     } catch (error) {
