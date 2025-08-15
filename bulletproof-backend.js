@@ -285,24 +285,26 @@ app.post('/download', async (req, res) => {
       if (result.success) {
         console.log(`✅ BROWSER AUTOMATION SUCCESS: ${result.method}`);
         
-        // Check if we have a Supabase proxy URL - use it directly instead of downloading
+        // For Supabase URLs, we need to call them as APIs to get the actual file
         if (result.downloadUrl.includes('supabase.co')) {
-          console.log(`🔄 Using Supabase proxy URL directly: ${result.downloadUrl}`);
-          return res.json({
-            success: true,
-            url: url,
-            platform: platform,
-            data: {
-              downloadUrl: result.downloadUrl,
-              method: result.method + '_proxy',
-              service: result.service,
-              quality: result.quality || 'HD',
-              tier: result.tier,
-              tierName: result.tierName
-            },
-            userPreferences: userPrefs,
-            timestamp: new Date().toISOString()
-          });
+          console.log(`🔄 Calling Supabase API to get actual download URL: ${result.downloadUrl}`);
+          try {
+            const supabaseResponse = await axios.post(result.downloadUrl, { url: url }, {
+              timeout: 30000,
+              headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+              }
+            });
+            
+            if (supabaseResponse.data && supabaseResponse.data.downloadUrl) {
+              result.downloadUrl = supabaseResponse.data.downloadUrl;
+              console.log(`✅ Got actual download URL from Supabase: ${result.downloadUrl}`);
+            }
+          } catch (supabaseError) {
+            console.error(`❌ Supabase API call failed: ${supabaseError.message}`);
+            // Continue with original URL
+          }
         }
         
         try {
