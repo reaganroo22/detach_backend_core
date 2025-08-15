@@ -155,6 +155,56 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Download proxy endpoint for handling protected URLs
+app.get('/proxy-download/:downloadId', async (req, res) => {
+  const { downloadId } = req.params;
+  const { url } = req.query;
+  
+  if (!url) {
+    return res.status(400).json({ error: 'URL parameter is required' });
+  }
+  
+  try {
+    console.log(`🔄 Proxying download: ${url}`);
+    
+    const response = await axios({
+      method: 'GET',
+      url: decodeURIComponent(url),
+      responseType: 'stream',
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://www.youtube.com/',
+        'Accept': '*/*',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    });
+    
+    // Set appropriate headers
+    res.set({
+      'Content-Type': response.headers['content-type'] || 'application/octet-stream',
+      'Content-Length': response.headers['content-length'],
+      'Content-Disposition': `attachment; filename="${downloadId}.mp4"`,
+      'Cache-Control': 'no-cache'
+    });
+    
+    // Pipe the response
+    response.data.pipe(res);
+    
+    response.data.on('error', (error) => {
+      console.error(`❌ Proxy download error: ${error.message}`);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Download failed' });
+      }
+    });
+    
+  } catch (error) {
+    console.error(`❌ Proxy download failed: ${error.message}`);
+    res.status(500).json({ error: `Proxy download failed: ${error.message}` });
+  }
+});
+
 // Main download endpoint - BULLETPROOF approach
 app.post('/download', async (req, res) => {
   const { url, format, audioQuality, videoQuality, maxFileSize } = req.body;
@@ -240,12 +290,23 @@ app.post('/download', async (req, res) => {
       if (result.success) {
         console.log(`✅ BROWSER AUTOMATION SUCCESS: ${result.method}`);
         
+        // Generate download ID for proxy
+        const downloadId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        
+        // Check if URL needs proxying (Google Video URLs)
+        let finalDownloadUrl = result.downloadUrl;
+        if (result.downloadUrl.includes('googlevideo.com') || result.downloadUrl.includes('youtube.com')) {
+          finalDownloadUrl = `${req.protocol}://${req.get('host')}/proxy-download/${downloadId}?url=${encodeURIComponent(result.downloadUrl)}`;
+          console.log(`🔄 Using proxy URL for protected content: ${finalDownloadUrl}`);
+        }
+        
         return res.json({
           success: true,
           url: url,
           platform: platform,
           data: {
-            downloadUrl: result.downloadUrl,
+            downloadUrl: finalDownloadUrl,
+            originalUrl: result.downloadUrl,
             method: result.method,
             service: result.service,
             quality: result.quality || 'HD',
@@ -372,12 +433,22 @@ app.post('/download/batch', async (req, res) => {
           await downloader.close();
           
           if (result.success) {
+            // Generate download ID for proxy
+            const downloadId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+            
+            // Check if URL needs proxying (Google Video URLs)
+            let finalDownloadUrl = result.downloadUrl;
+            if (result.downloadUrl.includes('googlevideo.com') || result.downloadUrl.includes('youtube.com')) {
+              finalDownloadUrl = `${req.protocol}://${req.get('host')}/proxy-download/${downloadId}?url=${encodeURIComponent(result.downloadUrl)}`;
+            }
+            
             results.push({
               success: true,
               url: url,
               platform: platform,
               data: {
-                downloadUrl: result.downloadUrl,
+                downloadUrl: finalDownloadUrl,
+                originalUrl: result.downloadUrl,
                 method: result.method,
                 service: result.service,
                 quality: 'HD',
