@@ -1,12 +1,16 @@
 /**
- * PRODUCTION BACKEND - BROWSER AUTOMATION THAT ACTUALLY WORKS
- * Uses the tested comprehensive downloader suite with batch support
+ * PRODUCTION BACKEND - YT-DLP FIRST, BROWSER AUTOMATION FALLBACK
+ * Handles millions of users by processing one URL at a time with intelligent fallback
  */
 
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const { exec } = require('child_process');
+const { promisify } = require('util');
 const ComprehensiveDownloaderSuite = require('./comprehensive-downloader-suite');
+
+const execAsync = promisify(exec);
 
 const app = express();
 app.use(cors());
@@ -14,20 +18,84 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Global downloader instance for reuse
+// Global downloader instance for reuse (lazy initialization)
 let globalDownloader = null;
 
-async function getDownloader() {
+// YT-DLP API endpoints for primary extraction
+const YT_DLP_ENDPOINTS = [
+  'https://yt-dlp-api.vercel.app/api/download',
+  'https://ytdl-core-api.herokuapp.com/api/info',
+  'https://api.cobalt.tools/api/json'
+];
+
+async function tryYtDlpExtraction(url) {
+  console.log('🎯 TRYING YT-DLP METHODS FIRST...');
+  
+  // Method 1: Try local yt-dlp if available
+  try {
+    console.log('🔧 Trying local yt-dlp...');
+    const { stdout } = await execAsync(`yt-dlp --get-url "${url}" --no-playlist`, { timeout: 15000 });
+    const downloadUrl = stdout.trim();
+    if (downloadUrl && downloadUrl.startsWith('http')) {
+      console.log('✅ SUCCESS: Local yt-dlp');
+      return { success: true, downloadUrl, method: 'local-yt-dlp' };
+    }
+  } catch (error) {
+    console.log('❌ Local yt-dlp not available or failed:', error.message);
+  }
+
+  // Method 2: Try yt-dlp API endpoints
+  for (const endpoint of YT_DLP_ENDPOINTS) {
+    try {
+      console.log(`🔧 Trying yt-dlp API: ${endpoint}`);
+      
+      let response;
+      
+      if (endpoint.includes('cobalt.tools')) {
+        response = await axios.post(endpoint, {
+          url: url,
+          quality: 'max',
+          format: 'mp4'
+        }, { timeout: 10000 });
+        
+        if (response.data?.url) {
+          console.log('✅ SUCCESS: Cobalt API');
+          return { success: true, downloadUrl: response.data.url, method: 'cobalt-api' };
+        }
+      } else {
+        response = await axios.post(endpoint, {
+          url: url,
+          format: 'best[ext=mp4]'
+        }, { timeout: 10000 });
+        
+        if (response.data?.downloadUrl || response.data?.url) {
+          const downloadUrl = response.data.downloadUrl || response.data.url;
+          console.log('✅ SUCCESS: YT-DLP API');
+          return { success: true, downloadUrl, method: 'yt-dlp-api' };
+        }
+      }
+    } catch (error) {
+      console.log(`❌ YT-DLP API failed: ${endpoint} - ${error.message}`);
+      continue;
+    }
+  }
+
+  console.log('❌ All YT-DLP methods failed');
+  return { success: false, error: 'YT-DLP extraction failed' };
+}
+
+async function getBrowserDownloader() {
   if (!globalDownloader) {
+    console.log('🌐 Initializing browser automation...');
     globalDownloader = new ComprehensiveDownloaderSuite({
       headless: true,
       qualityPreference: 'highest',
       enableLogging: true,
-      retryAttempts: 2,
-      downloadTimeout: 45000
+      retryAttempts: 1, // Reduced to prevent timeout
+      downloadTimeout: 30000 // Reduced timeout
     });
     await globalDownloader.initialize();
-    console.log('✅ Global downloader initialized');
+    console.log('✅ Browser automation initialized');
   }
   return globalDownloader;
 }
@@ -41,7 +109,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// WORKING download endpoint using TESTED browser automation
+// MAIN download endpoint: YT-DLP FIRST, then browser automation fallback
 app.post('/download', async (req, res) => {
   const { url, format, audioQuality, videoQuality, maxFileSize } = req.body;
   
@@ -49,7 +117,7 @@ app.post('/download', async (req, res) => {
     return res.status(400).json({ error: 'URL is required' });
   }
 
-  console.log(`🚀 BROWSER AUTOMATION DOWNLOAD: ${url}`);
+  console.log(`🚀 DOWNLOAD REQUEST: ${url}`);
   
   const userPrefs = {
     format: format || 'audio',
@@ -59,11 +127,42 @@ app.post('/download', async (req, res) => {
   };
   
   try {
-    const downloader = await getDownloader();
+    // STEP 1: Try YT-DLP methods first (faster, more reliable)
+    console.log('🎯 STEP 1: Trying YT-DLP extraction...');
+    const ytDlpResult = await tryYtDlpExtraction(url);
     
-    // Use the TESTED browser automation
+    if (ytDlpResult.success) {
+      console.log(`✅ YT-DLP SUCCESS: ${ytDlpResult.method}`);
+      
+      return res.json({
+        success: true,
+        url: url,
+        platform: detectPlatform(url),
+        data: {
+          downloadUrl: ytDlpResult.downloadUrl,
+          method: ytDlpResult.method,
+          service: 'yt-dlp',
+          quality: 'HD',
+          tier: 1,
+          tierName: 'YT-DLP Primary'
+        },
+        tiers: [{
+          tier: 1,
+          source: 'yt-dlp',
+          success: true,
+          method: ytDlpResult.method
+        }],
+        userPreferences: userPrefs,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // STEP 2: Fallback to browser automation
+    console.log('🌐 STEP 2: YT-DLP failed, trying browser automation...');
+    const downloader = await getBrowserDownloader();
+    
     const result = await downloader.downloadWithRetry(url, null, (progress) => {
-      console.log(`📈 Progress: ${progress.step} - ${progress.tierName || ''} (Tier ${progress.tier || 'N/A'})`);
+      console.log(`📈 Browser Progress: ${progress.step} - ${progress.tierName || ''} (Tier ${progress.tier || 'N/A'})`);
     });
     
     if (result.success) {
@@ -78,45 +177,58 @@ app.post('/download', async (req, res) => {
           method: result.method,
           service: result.service,
           quality: result.quality || 'HD',
-          tier: result.tier,
+          tier: result.tier + 1, // Increment tier since this is fallback
           tierName: result.tierName
         },
-        tiers: [{
-          tier: result.tier,
-          source: result.service,
-          success: true,
-          method: result.method
-        }],
+        tiers: [
+          { tier: 1, source: 'yt-dlp', success: false, method: 'api-extraction' },
+          { tier: result.tier + 1, source: result.service, success: true, method: result.method }
+        ],
         userPreferences: userPrefs,
         stats: downloader.getStats(),
         timestamp: new Date().toISOString()
       });
     } else {
-      console.log(`❌ BROWSER AUTOMATION FAILED: ${result.error}`);
+      console.log(`❌ ALL METHODS FAILED: ${result.error}`);
       
       res.status(400).json({
         success: false,
-        error: result.error,
+        error: `All extraction methods failed: YT-DLP failed, Browser automation failed: ${result.error}`,
         url: url,
         platform: result.platform,
-        stats: downloader.getStats(),
+        tiers: [
+          { tier: 1, source: 'yt-dlp', success: false, method: 'api-extraction' },
+          { tier: 2, source: 'browser-automation', success: false, method: 'comprehensive-suite' }
+        ],
         timestamp: new Date().toISOString()
       });
     }
     
   } catch (error) {
-    console.error(`❌ CRITICAL BROWSER ERROR: ${error.message}`);
+    console.error(`❌ CRITICAL DOWNLOAD ERROR: ${error.message}`);
     
     res.status(500).json({
       success: false,
-      error: `Browser automation failed: ${error.message}`,
+      error: `Download failed: ${error.message}`,
       url: url,
       timestamp: new Date().toISOString()
     });
   }
 });
 
-// BATCH download endpoint for multiple URLs
+function detectPlatform(url) {
+  const cleanUrl = url.toLowerCase();
+  if (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be')) return 'youtube';
+  if (cleanUrl.includes('instagram.com')) return 'instagram';
+  if (cleanUrl.includes('tiktok.com')) return 'tiktok';
+  if (cleanUrl.includes('twitter.com') || cleanUrl.includes('x.com')) return 'twitter';
+  if (cleanUrl.includes('facebook.com')) return 'facebook';
+  if (cleanUrl.includes('vimeo.com')) return 'vimeo';
+  if (cleanUrl.includes('reddit.com')) return 'reddit';
+  return 'unknown';
+}
+
+// BATCH download endpoint: Process URLs ONE AT A TIME for reliability
 app.post('/download/batch', async (req, res) => {
   const { urls, format, audioQuality, videoQuality, maxFileSize } = req.body;
   
@@ -124,11 +236,11 @@ app.post('/download/batch', async (req, res) => {
     return res.status(400).json({ error: 'URLs array is required' });
   }
   
-  if (urls.length > 50) {
-    return res.status(400).json({ error: 'Maximum 50 URLs per batch' });
+  if (urls.length > 100) {
+    return res.status(400).json({ error: 'Maximum 100 URLs per batch' });
   }
   
-  console.log(`🚀 BATCH DOWNLOAD: ${urls.length} URLs`);
+  console.log(`🚀 BATCH DOWNLOAD: ${urls.length} URLs (processing one at a time)`);
   
   const userPrefs = {
     format: format || 'audio',
@@ -137,18 +249,113 @@ app.post('/download/batch', async (req, res) => {
     maxFileSize: maxFileSize || 100
   };
   
+  const results = [];
+  let successCount = 0;
+  let failureCount = 0;
+  
   try {
-    const downloader = await getDownloader();
+    // Process each URL ONE AT A TIME (sequential processing)
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      console.log(`📦 Processing ${i + 1}/${urls.length}: ${url}`);
+      
+      try {
+        // STEP 1: Try YT-DLP first for this URL
+        console.log(`🎯 [${i + 1}/${urls.length}] Trying YT-DLP for: ${url}`);
+        const ytDlpResult = await tryYtDlpExtraction(url);
+        
+        if (ytDlpResult.success) {
+          console.log(`✅ [${i + 1}/${urls.length}] YT-DLP SUCCESS: ${ytDlpResult.method}`);
+          
+          results.push({
+            success: true,
+            url: url,
+            platform: detectPlatform(url),
+            data: {
+              downloadUrl: ytDlpResult.downloadUrl,
+              method: ytDlpResult.method,
+              service: 'yt-dlp',
+              quality: 'HD',
+              tier: 1,
+              tierName: 'YT-DLP Primary'
+            },
+            error: null,
+            tier: 1,
+            attempts: 1
+          });
+          
+          successCount++;
+          continue; // Move to next URL
+        }
+
+        // STEP 2: Fallback to browser automation for this URL
+        console.log(`🌐 [${i + 1}/${urls.length}] YT-DLP failed, trying browser automation...`);
+        const downloader = await getBrowserDownloader();
+        
+        const result = await downloader.downloadWithRetry(url, null, (progress) => {
+          console.log(`📈 [${i + 1}/${urls.length}] Browser Progress: ${progress.step}`);
+        });
+        
+        if (result.success) {
+          console.log(`✅ [${i + 1}/${urls.length}] BROWSER SUCCESS: ${result.method}`);
+          
+          results.push({
+            success: true,
+            url: url,
+            platform: result.platform,
+            data: {
+              downloadUrl: result.downloadUrl,
+              method: result.method,
+              service: result.service,
+              quality: result.quality || 'HD',
+              tier: result.tier + 1,
+              tierName: result.tierName
+            },
+            error: null,
+            tier: result.tier + 1,
+            attempts: result.attempts || 1
+          });
+          
+          successCount++;
+        } else {
+          console.log(`❌ [${i + 1}/${urls.length}] ALL METHODS FAILED: ${result.error}`);
+          
+          results.push({
+            success: false,
+            url: url,
+            platform: result.platform || detectPlatform(url),
+            data: null,
+            error: `Both YT-DLP and browser automation failed: ${result.error}`,
+            tier: 0,
+            attempts: result.attempts || 1
+          });
+          
+          failureCount++;
+        }
+        
+      } catch (urlError) {
+        console.error(`❌ [${i + 1}/${urls.length}] URL processing failed: ${urlError.message}`);
+        
+        results.push({
+          success: false,
+          url: url,
+          platform: detectPlatform(url),
+          data: null,
+          error: `Processing failed: ${urlError.message}`,
+          tier: 0,
+          attempts: 1
+        });
+        
+        failureCount++;
+      }
+      
+      // Small delay between URLs to prevent overwhelming the system
+      if (i < urls.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+      }
+    }
     
-    // Use the TESTED batch download with progress tracking
-    const results = await downloader.batchDownload(urls, 3, (batchProgress) => {
-      console.log(`📦 Batch: ${batchProgress.percentage}% (${batchProgress.completed}/${batchProgress.total}) - ${batchProgress.status}`);
-    });
-    
-    const successCount = results.filter(r => r.success).length;
-    const failureCount = results.length - successCount;
-    
-    console.log(`📦 BATCH COMPLETE: ${successCount}/${results.length} successful`);
+    console.log(`📦 BATCH COMPLETE: ${successCount}/${urls.length} successful (${failureCount} failed)`);
     
     res.json({
       batch: true,
@@ -156,23 +363,8 @@ app.post('/download/batch', async (req, res) => {
       successful: successCount,
       failed: failureCount,
       userPreferences: userPrefs,
-      results: results.map(result => ({
-        success: result.success,
-        url: result.url,
-        platform: result.platform,
-        data: result.success ? {
-          downloadUrl: result.downloadUrl,
-          method: result.method,
-          service: result.service,
-          quality: result.quality || 'HD',
-          tier: result.tier,
-          tierName: result.tierName
-        } : null,
-        error: result.success ? null : result.error,
-        tier: result.tier,
-        attempts: result.attempts
-      })),
-      stats: downloader.getStats(),
+      results: results,
+      processingStrategy: 'sequential-one-at-a-time',
       timestamp: new Date().toISOString()
     });
     
@@ -187,11 +379,84 @@ app.post('/download/batch', async (req, res) => {
   }
 });
 
+// Add timeout middleware to prevent hanging requests
+app.use((req, res, next) => {
+  // Set a 120-second timeout for all requests to prevent hanging
+  req.setTimeout(120000, () => {
+    console.log('⏰ Request timeout - 120 seconds exceeded');
+    if (!res.headersSent) {
+      res.status(408).json({
+        success: false,
+        error: 'Request timeout - server took too long to respond',
+        timeout: '120 seconds',
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+  next();
+});
+
+// Add memory usage monitoring
+setInterval(() => {
+  const memUsage = process.memoryUsage();
+  const memUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+  
+  if (memUsedMB > 300) { // If using more than 300MB
+    console.log(`⚠️ HIGH MEMORY USAGE: ${memUsedMB}MB`);
+    
+    // Force garbage collection if available
+    if (global.gc) {
+      global.gc();
+      console.log('🗑️ Forced garbage collection');
+    }
+    
+    // Reset browser instance if memory is too high
+    if (memUsedMB > 500 && globalDownloader) {
+      console.log('🔄 Resetting browser due to high memory usage');
+      globalDownloader.close().catch(console.error);
+      globalDownloader = null;
+    }
+  }
+}, 30000); // Check every 30 seconds
+
+// Enhanced error handling for unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process, just log the error
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  // Don't exit the process, just log the error
+});
+
 // Cleanup and restart downloader if needed
 process.on('SIGTERM', async () => {
   console.log('🔄 Graceful shutdown initiated...');
   if (globalDownloader) {
-    await globalDownloader.close();
+    try {
+      await Promise.race([
+        globalDownloader.close(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Cleanup timeout')), 10000))
+      ]);
+    } catch (error) {
+      console.log('⚠️ Cleanup warning:', error.message);
+    }
+  }
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('🔄 SIGINT received, shutting down gracefully...');
+  if (globalDownloader) {
+    try {
+      await Promise.race([
+        globalDownloader.close(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Cleanup timeout')), 10000))
+      ]);
+    } catch (error) {
+      console.log('⚠️ Cleanup warning:', error.message);
+    }
   }
   process.exit(0);
 });
