@@ -412,8 +412,9 @@ app.post('/download', async (req, res) => {
           const extension = userPrefs.format === 'audio' ? 'mp3' : 'mp4';
           const filename = `${platform}_${timestamp}_${randomId}.${extension}`;
           
-          // Download the file locally using the actual download URL
-          await downloadFile(actualDownloadUrl, filename);
+          // Download the file locally using the browser automation URL
+          console.log(`⬇️ Downloading file from browser automation URL...`);
+          await downloadFile(result.downloadUrl, filename);
           
           // Return local file URL
           const localFileUrl = `${req.protocol}://${req.get('host')}/files/${filename}`;
@@ -425,7 +426,6 @@ app.post('/download', async (req, res) => {
             data: {
               downloadUrl: localFileUrl,
               originalUrl: result.downloadUrl,
-              actualDownloadUrl: actualDownloadUrl,
               filename: filename,
               method: result.method,
               service: result.service,
