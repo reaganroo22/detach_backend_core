@@ -170,6 +170,7 @@ class ComprehensiveDownloaderSuite {
   async setupDownloadInterception() {
     let downloadUrl = null;
     let downloadStarted = false;
+    let downloadedFilePath = null;
     const interceptedUrls = new Set();
 
     this.page.on('download', async download => {
@@ -177,7 +178,23 @@ class ComprehensiveDownloaderSuite {
       downloadStarted = true;
       interceptedUrls.add(downloadUrl);
       this.log(`📥 Download intercepted: ${downloadUrl}`);
-      await download.cancel();
+      
+      // Download the file within the browser session to avoid IP restrictions
+      try {
+        const filename = `browser_download_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp4`;
+        const filePath = path.join(this.config.downloadPath, filename);
+        
+        // Ensure download directory exists
+        await fs.mkdir(this.config.downloadPath, { recursive: true });
+        
+        // Save the download
+        await download.saveAs(filePath);
+        downloadedFilePath = filePath;
+        this.log(`💾 File saved via browser: ${filePath}`);
+      } catch (saveError) {
+        this.log(`⚠️ Browser save failed, will use URL: ${saveError.message}`);
+        await download.cancel();
+      }
     });
 
     this.page.on('response', response => {
@@ -195,6 +212,7 @@ class ComprehensiveDownloaderSuite {
     return { 
       getDownloadUrl: () => downloadUrl, 
       isDownloadStarted: () => downloadStarted,
+      getDownloadedFile: () => downloadedFilePath,
       getAllUrls: () => Array.from(interceptedUrls)
     };
   }
@@ -210,7 +228,7 @@ class ComprehensiveDownloaderSuite {
     this.log(`🎯 Tier 1: GetLoady download for ${platform}`);
     this.stats.tierUsage.getloady++;
     
-    const { getDownloadUrl, isDownloadStarted } = await this.setupDownloadInterception();
+    const { getDownloadUrl, isDownloadStarted, getDownloadedFile } = await this.setupDownloadInterception();
     
     const platformUrl = `https://getloady.com/${platform}`;
     await this.page.goto(platformUrl, { waitUntil: 'networkidle', timeout: 30000 });
@@ -277,41 +295,87 @@ class ComprehensiveDownloaderSuite {
       throw new Error(`GetLoady: Could not find download button for ${platform}`);
     }
 
-    // Enhanced download detection with quality selection
-    for (let i = 0; i < 20; i++) {
-      if (isDownloadStarted() && getDownloadUrl()) {
-        return {
-          success: true,
-          downloadUrl: getDownloadUrl(),
-          platform: platform,
-          method: 'getloady_intercepted',
-          quality: 'HD',
-          service: 'getloady'
-        };
-      }
-
-      // Check for quality options
+    // Enhanced download detection with actual download triggering
+    let downloadButtonClicked = false;
+    
+    for (let i = 0; i < 25; i++) {
+      // Check for Edge Function errors in console logs
       try {
-        const qualityButtons = await this.page.$$('button:has-text("HD"), button:has-text("720p"), button:has-text("1080p")');
-        if (qualityButtons.length > 0 && this.config.qualityPreference === 'highest') {
-          await qualityButtons[0].click();
-          this.log('🎬 Selected highest quality option');
-          continue;
+        const logs = await this.page.evaluate(() => {
+          return window.console._logs || [];
+        });
+        
+        const errorMessages = logs.filter(log => 
+          log && (log.includes('Edge Function returned a non-2xx status code') || 
+                  log.includes('FunctionsHttpError') ||
+                  log.includes('server responded with a status of 500'))
+        );
+        
+        if (errorMessages.length > 0) {
+          this.log(`❌ GetLoady: Edge Function error detected - stopping attempts`);
+          throw new Error('GetLoady Edge Function failed - service unavailable');
         }
-      } catch (e) {
-        // No quality options
+      } catch (evalError) {
+        // If we can't check console, look for visible error indicators
+        try {
+          const errorElements = await this.page.$$('text="Error", text="Failed", text="not available"');
+          if (errorElements.length > 0) {
+            this.log(`❌ GetLoady: Error message detected on page - stopping attempts`);
+            throw new Error('GetLoady service error detected');
+          }
+        } catch (e) {
+          // Continue if we can't check for errors
+        }
       }
 
-      // Check for download links
-      const downloadLinks = await this.page.$$('a[href*="download"], a[href*=".mp4"], a[download], a[href^="blob:"]');
-      for (const link of downloadLinks) {
-        const href = await link.getAttribute('href');
-        if (href && this.isValidVideoUrl(href)) {
+      // Check for download links and click them ONLY ONCE
+      if (!downloadButtonClicked) {
+        const downloadLinks = await this.page.$$('a[href*="download"], a[href*=".mp4"], a[download], a[href^="blob:"], button:has-text("Download")');
+        for (const link of downloadLinks) {
+          try {
+            const href = await link.getAttribute('href');
+            const tagName = await link.evaluate(el => el.tagName.toLowerCase());
+            
+            if ((href && this.isValidVideoUrl(href)) || tagName === 'button') {
+              this.log(`🔗 Clicking download link/button: ${href || 'button'}`);
+              await link.click();
+              downloadButtonClicked = true;
+              
+              // Wait longer for download to actually start
+              await this.page.waitForTimeout(5000);
+              
+              const downloadedFile = getDownloadedFile();
+              if (downloadedFile) {
+                this.log(`💾 File downloaded successfully: ${downloadedFile}`);
+                return {
+                  success: true,
+                  downloadUrl: getDownloadUrl() || href,
+                  localFile: downloadedFile,
+                  platform: platform,
+                  method: 'getloady_browser_download',
+                  quality: 'HD',
+                  service: 'getloady'
+                };
+              }
+              break; // Only click one download button
+            }
+          } catch (clickError) {
+            this.log(`⚠️ Could not click download link: ${clickError.message}`);
+            continue;
+          }
+        }
+      }
+
+      // Check if download started but file not ready yet
+      if (isDownloadStarted()) {
+        const downloadedFile = getDownloadedFile();
+        if (downloadedFile) {
           return {
             success: true,
-            downloadUrl: href,
+            downloadUrl: getDownloadUrl(),
+            localFile: downloadedFile,
             platform: platform,
-            method: 'getloady_dom',
+            method: 'getloady_browser_download',
             quality: 'HD',
             service: 'getloady'
           };
@@ -350,7 +414,7 @@ class ComprehensiveDownloaderSuite {
     this.log(`🎯 Tier 2: SSVid download for ${platform}`);
     this.stats.tierUsage.ssvid++;
     
-    const { getDownloadUrl, isDownloadStarted } = await this.setupDownloadInterception();
+    const { getDownloadUrl, isDownloadStarted, getDownloadedFile } = await this.setupDownloadInterception();
     
     await this.page.goto('https://ssvid.net/en', { waitUntil: 'networkidle', timeout: 30000 });
     
@@ -379,64 +443,85 @@ class ComprehensiveDownloaderSuite {
     await this.page.click('button:has-text("Start"), button:has-text("Download")');
     this.log('🔘 SSVid: Clicked Start button');
 
-    // Enhanced processing with quality selection
-    for (let i = 0; i < 25; i++) {
-      if (isDownloadStarted() && getDownloadUrl()) {
-        return {
-          success: true,
-          downloadUrl: getDownloadUrl(),
-          platform: platform,
-          method: 'ssvid_intercepted',
-          service: 'ssvid'
-        };
-      }
-
-      // Check for conversion table with quality options
+    // Enhanced processing with actual download triggering
+    let convertButtonClicked = false;
+    
+    for (let i = 0; i < 30; i++) {
+      // Check for service errors
       try {
-        const convertButtons = await this.page.$$('button:has-text("Convert")');
-        if (convertButtons.length > 0) {
-          // Select quality based on preference
-          let selectedButton = convertButtons[0]; // Default to first (usually highest)
-          
-          if (this.config.qualityPreference === 'medium' && convertButtons.length > 1) {
-            selectedButton = convertButtons[Math.floor(convertButtons.length / 2)];
-          } else if (this.config.qualityPreference === 'lowest') {
-            selectedButton = convertButtons[convertButtons.length - 1];
-          }
-          
-          await selectedButton.click();
-          this.log(`🎬 SSVid: Clicked convert button (${this.config.qualityPreference} quality)`);
-          
-          // Wait for conversion
-          for (let j = 0; j < 15; j++) {
-            if (isDownloadStarted() && getDownloadUrl()) {
+        const errorElements = await this.page.$$('text="Error", text="Failed", text="not available", text="unavailable"');
+        if (errorElements.length > 0) {
+          this.log(`❌ SSVid: Error message detected on page - stopping attempts`);
+          throw new Error('SSVid service error detected');
+        }
+      } catch (e) {
+        // Continue if we can't check for errors
+      }
+      // Check for conversion table with quality options and click them ONLY ONCE
+      if (!convertButtonClicked) {
+        try {
+          const convertButtons = await this.page.$$('button:has-text("Convert"), button:has-text("Download")');
+          if (convertButtons.length > 0) {
+            // Select quality based on preference
+            let selectedButton = convertButtons[0]; // Default to first (usually highest)
+            
+            if (this.config.qualityPreference === 'medium' && convertButtons.length > 1) {
+              selectedButton = convertButtons[Math.floor(convertButtons.length / 2)];
+            } else if (this.config.qualityPreference === 'lowest') {
+              selectedButton = convertButtons[convertButtons.length - 1];
+            }
+            
+            const buttonText = await selectedButton.textContent();
+            this.log(`🎬 SSVid: Clicking ${buttonText} button (${this.config.qualityPreference} quality)`);
+            await selectedButton.click();
+            convertButtonClicked = true;
+            
+            // Wait for conversion and check for download
+            await this.page.waitForTimeout(5000);
+            
+            const downloadedFile = getDownloadedFile();
+            if (downloadedFile) {
               return {
                 success: true,
                 downloadUrl: getDownloadUrl(),
+                localFile: downloadedFile,
                 platform: platform,
-                method: 'ssvid_converted',
+                method: 'ssvid_browser_download',
                 service: 'ssvid'
               };
             }
-            await this.page.waitForTimeout(2000);
           }
+        } catch (e) {
+          // No convert buttons yet
         }
-      } catch (e) {
-        // No convert buttons yet
       }
 
-      // Check for direct download links
-      const downloadLinks = await this.page.$$('a[href*="download"], a[href*=".mp4"], a[download]');
+      // Check for direct download links and click them
+      const downloadLinks = await this.page.$$('a[href*="download"], a[href*=".mp4"], a[download], button:has-text("Download")');
       for (const link of downloadLinks) {
-        const href = await link.getAttribute('href');
-        if (href && this.isValidVideoUrl(href)) {
-          return {
-            success: true,
-            downloadUrl: href,
-            platform: platform,
-            method: 'ssvid_dom',
-            service: 'ssvid'
-          };
+        try {
+          const href = await link.getAttribute('href');
+          const tagName = await link.evaluate(el => el.tagName.toLowerCase());
+          
+          if ((href && this.isValidVideoUrl(href)) || tagName === 'button') {
+            this.log(`🔗 SSVid: Clicking download link: ${href || 'button'}`);
+            await link.click();
+            await this.page.waitForTimeout(3000);
+            
+            const downloadedFile = getDownloadedFile();
+            if (downloadedFile) {
+              return {
+                success: true,
+                downloadUrl: getDownloadUrl() || href,
+                localFile: downloadedFile,
+                platform: platform,
+                method: 'ssvid_browser_download',
+                service: 'ssvid'
+              };
+            }
+          }
+        } catch (clickError) {
+          continue;
         }
       }
 
@@ -458,7 +543,7 @@ class ComprehensiveDownloaderSuite {
     this.log(`🎯 Tier 3: Squidlr download for ${platform}`);
     this.stats.tierUsage.squidlr++;
     
-    const { getDownloadUrl, isDownloadStarted } = await this.setupDownloadInterception();
+    const { getDownloadUrl, isDownloadStarted, getDownloadedFile } = await this.setupDownloadInterception();
     
     await this.page.goto('https://www.squidlr.com/', { waitUntil: 'networkidle', timeout: 30000 });
     
@@ -488,28 +573,44 @@ class ComprehensiveDownloaderSuite {
           if (e.message.includes('not found')) throw e;
         }
 
-        // Check for download content
-        const downloadLinks = await this.page.$$('a[href*="download"], a[href*=".mp4"], a[download]');
+        // Check for download content and click to trigger downloads
+        const downloadLinks = await this.page.$$('a[href*="download"], a[href*=".mp4"], a[download], button:has-text("Download")');
         for (const link of downloadLinks) {
-          const href = await link.getAttribute('href');
-          if (href && this.isValidVideoUrl(href)) {
-            return {
-              success: true,
-              downloadUrl: href,
-              platform: platform,
-              method: 'squidlr_dom',
-              service: 'squidlr'
-            };
+          try {
+            const href = await link.getAttribute('href');
+            const tagName = await link.evaluate(el => el.tagName.toLowerCase());
+            
+            if ((href && this.isValidVideoUrl(href)) || tagName === 'button') {
+              this.log(`🔗 Squidlr: Clicking download link: ${href || 'button'}`);
+              await link.click();
+              await this.page.waitForTimeout(3000);
+              
+              const downloadedFile = getDownloadedFile();
+              if (downloadedFile) {
+                return {
+                  success: true,
+                  downloadUrl: getDownloadUrl() || href,
+                  localFile: downloadedFile,
+                  platform: platform,
+                  method: 'squidlr_browser_download',
+                  service: 'squidlr'
+                };
+              }
+            }
+          } catch (clickError) {
+            continue;
           }
         }
       }
 
-      if (isDownloadStarted() && getDownloadUrl()) {
+      const downloadedFile = getDownloadedFile();
+      if (downloadedFile) {
         return {
           success: true,
           downloadUrl: getDownloadUrl(),
+          localFile: downloadedFile,
           platform: platform,
-          method: 'squidlr_intercepted',
+          method: 'squidlr_browser_download',
           service: 'squidlr'
         };
       }

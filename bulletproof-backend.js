@@ -353,6 +353,50 @@ app.post('/download', async (req, res) => {
       if (result.success) {
         console.log(`✅ BROWSER AUTOMATION SUCCESS: ${result.method}`);
         
+        // Check if we have a local file from browser download
+        if (result.localFile) {
+          console.log(`📁 Using browser-downloaded file: ${result.localFile}`);
+          
+          // Move the file to our downloads directory with proper naming
+          const timestamp = Date.now();
+          const randomId = Math.random().toString(36).substr(2, 9);
+          const extension = userPrefs.format === 'audio' ? 'mp3' : 'mp4';
+          const newFilename = `${platform}_${timestamp}_${randomId}.${extension}`;
+          const newFilePath = path.join(DOWNLOADS_DIR, newFilename);
+          
+          // Copy the browser-downloaded file to our downloads directory
+          await fs.copyFile(result.localFile, newFilePath);
+          
+          // Clean up the original browser file
+          try {
+            await fs.unlink(result.localFile);
+          } catch (unlinkError) {
+            console.log(`⚠️ Could not clean up browser file: ${unlinkError.message}`);
+          }
+          
+          // Return local file URL
+          const localFileUrl = `${req.protocol}://${req.get('host')}/files/${newFilename}`;
+          
+          return res.json({
+            success: true,
+            url: url,
+            platform: platform,
+            data: {
+              downloadUrl: localFileUrl,
+              originalUrl: result.downloadUrl,
+              filename: newFilename,
+              method: result.method,
+              service: result.service,
+              quality: result.quality || 'HD',
+              tier: result.tier,
+              tierName: result.tierName,
+              downloadMethod: 'browser_session'
+            },
+            userPreferences: userPrefs,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
         // Handle different URL types to get actual downloadable URLs
         let actualDownloadUrl = result.downloadUrl;
         
