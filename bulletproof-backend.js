@@ -219,7 +219,11 @@ app.post('/download', async (req, res) => {
             '--disable-dev-shm-usage',
             '--disable-gpu',
             '--disable-web-security',
-            '--disable-features=VizDisplayCompositor'
+            '--disable-features=VizDisplayCompositor',
+            '--headless=new',
+            '--disable-extensions',
+            '--disable-plugins',
+            '--mute-audio'
           ]
         }
       });
@@ -345,7 +349,22 @@ app.post('/download/batch', async (req, res) => {
           const downloader = new ComprehensiveDownloaderSuite({
             headless: true,
             downloadTimeout: 90000, // 90 seconds per URL
-            retryAttempts: 1
+            retryAttempts: 1,
+            browserOptions: {
+              executablePath: '/usr/bin/chromium-browser',
+              args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor',
+                '--headless=new',
+                '--disable-extensions',
+                '--disable-plugins',
+                '--mute-audio'
+              ]
+            }
           });
           
           await downloader.initialize();

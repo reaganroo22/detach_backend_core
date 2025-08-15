@@ -55,9 +55,10 @@ class ComprehensiveDownloaderSuite {
     // Ensure download directory exists
     await fs.mkdir(this.config.downloadPath, { recursive: true });
     
-    this.browser = await chromium.launch({
+    // Use browserOptions from config if available, otherwise use defaults
+    const launchOptions = this.config.browserOptions || {
       headless: this.config.headless,
-      channel: 'chrome',
+      executablePath: '/usr/bin/chromium-browser', // Use Chromium on Alpine
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -71,7 +72,9 @@ class ComprehensiveDownloaderSuite {
         '--disable-blink-features=AutomationControlled',
         '--no-first-run'
       ]
-    });
+    };
+    
+    this.browser = await chromium.launch(launchOptions);
 
     this.page = await this.browser.newPage();
     
