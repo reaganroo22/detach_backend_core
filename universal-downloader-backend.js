@@ -145,7 +145,7 @@ async function tryGetLoady(url, platform) {
         console.log(`💾 GetLoady: File saved to ${downloadPath}`);
         
         // Return backend URL instead of blob URL
-        const baseUrl = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || 'http://localhost:3000';
+        const baseUrl = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || 'https://detach-backend-core.fly.dev';
         const backendUrl = `${baseUrl}/file/${filename}`;
         
         capturedUrls.push({
@@ -334,7 +334,7 @@ async function trySSVid(url) {
         console.log(`💾 SSVid: File saved to ${downloadPath}`);
         
         // Return backend URL instead of original URL
-        const baseUrl = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || 'http://localhost:3000';
+        const baseUrl = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || 'https://detach-backend-core.fly.dev';
         const backendUrl = `${baseUrl}/file/${filename}`;
         
         capturedUrls.push({
@@ -466,7 +466,7 @@ async function trySquidlr(url, platform) {
         console.log(`💾 Squidlr: File saved to ${downloadPath}`);
         
         // Return backend URL instead of original URL
-        const baseUrl = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || 'http://localhost:3000';
+        const baseUrl = process.env.RAILWAY_STATIC_URL || process.env.PUBLIC_URL || 'https://detach-backend-core.fly.dev';
         const backendUrl = `${baseUrl}/file/${filename}`;
         
         capturedUrls.push({
