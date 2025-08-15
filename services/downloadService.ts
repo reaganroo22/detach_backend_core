@@ -15,7 +15,7 @@ export interface DownloadItem {
   id: string;
   url: string;
   title: string;
-  platform: 'youtube' | 'youtube-music' | 'spotify' | 'instagram' | 'tiktok' | 'twitter' | 'podcast' | 'facebook' | 'linkedin' | 'pinterest';
+  platform: 'youtube' | 'youtube-music' | 'spotify' | 'instagram' | 'tiktok' | 'twitter' | 'podcast' | 'facebook' | 'linkedin' | 'pinterest' | 'vimeo' | 'reddit' | 'soundcloud' | 'dailymotion';
   status: 'pending' | 'downloading' | 'completed' | 'failed';
   progress: number;
   filePath?: string;
@@ -432,37 +432,45 @@ class DownloadService {
         }
       });
 
-      if (response.data?.success && response.data?.data?.length > 0) {
-        const downloadItem = response.data.data[0]; // Get first successful result
-        console.log(`✅ Universal Backend Success: Tier ${downloadItem.tier} (${downloadItem.source})`);
+      // Handle new backend response format
+      if (response.data?.success && response.data?.data) {
+        const downloadData = response.data.data; // Single object, not array
+        console.log(`✅ Universal Backend Success: Tier ${downloadData.tier} (${downloadData.service})`);
         console.log('📱 Platform detected:', response.data.platform);
-        console.log('🎯 Tiers attempted:', response.data.tiers.length);
+        console.log('🎯 Method used:', downloadData.method);
+        console.log('🔗 Download URL:', downloadData.downloadUrl);
         
         // Log tier results for debugging
-        response.data.tiers.forEach((tier: any) => {
-          const status = tier.success ? '✅' : '❌';
-          console.log(`   ${status} Tier ${tier.tier} (${tier.source}): ${tier.success ? 'SUCCESS' : 'FAILED'}`);
-        });
+        if (response.data.tiers && response.data.tiers.length > 0) {
+          response.data.tiers.forEach((tier: any) => {
+            const status = tier.success ? '✅' : '❌';
+            console.log(`   ${status} Tier ${tier.tier} (${tier.source}): ${tier.success ? 'SUCCESS' : 'FAILED'}`);
+          });
+        }
 
         return {
-          url: downloadItem.url,
+          url: downloadData.downloadUrl, // This is the key fix - use downloadUrl from backend
           metadata: {
-            title: downloadItem.title || response.data.platform + ' content',
-            duration: downloadItem.duration,
-            uploader: downloadItem.uploader,
-            filename: downloadItem.filename,
+            title: downloadData.title || response.data.platform + ' content',
+            duration: downloadData.duration,
+            uploader: downloadData.uploader,
+            filename: downloadData.filename,
             platform: response.data.platform,
-            tier: downloadItem.tier,
-            source: downloadItem.source,
-            tierInfo: `Tier ${downloadItem.tier}: ${downloadItem.source}`,
-            allTiers: response.data.tiers, // Include info about all attempted tiers
-            successfulTier: downloadItem.tier,
-            downloadMethod: downloadItem.type || 'download_file'
+            tier: downloadData.tier,
+            source: downloadData.service,
+            tierInfo: `Tier ${downloadData.tier}: ${downloadData.service}`,
+            tierName: downloadData.tierName,
+            method: downloadData.method,
+            quality: downloadData.quality,
+            allTiers: response.data.tiers,
+            successfulTier: downloadData.tier,
+            downloadMethod: downloadData.method || 'browser_automation'
           }
         };
       } else {
-        console.log('❌ Universal Backend: All tiers failed');
-        throw new Error('All download tiers failed');
+        console.log('❌ Universal Backend: Download failed');
+        console.log('Response data:', response.data);
+        throw new Error(response.data?.error || 'Download failed');
       }
     } catch (error: any) {
       console.log('❌ Universal Backend Error:', error.message);
