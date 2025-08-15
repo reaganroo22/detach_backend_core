@@ -30,7 +30,7 @@ services:
     environment:
       - DISPLAY_WIDTH=1920
       - DISPLAY_HEIGHT=1080
-      - VNC_PASSWORD=password
+      - VNC_PASSWORD=${VNC_PASSWORD:-changeme}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     networks:

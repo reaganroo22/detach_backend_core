@@ -92,8 +92,8 @@ services:
     ports:
       - "6379:6379"
     environment:
-      - REDIS_PASSWORD=verification_cache_2024
-    command: redis-server --requirepass verification_cache_2024
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-changeme}
+    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}
     networks:
       - verified-network
     volumes:
@@ -106,7 +106,7 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana:/etc/grafana/provisioning
