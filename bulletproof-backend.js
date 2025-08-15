@@ -8,6 +8,9 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const fs = require('fs').promises;
+const path = require('path');
+const { createWriteStream } = require('fs');
 
 const app = express();
 app.use(cors());
@@ -21,6 +24,10 @@ app.use('/download', (req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// Create downloads directory and serve static files
+const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
+app.use('/files', express.static(DOWNLOADS_DIR));
 
 // Working API endpoints that don't require browser automation
 const BULLETPROOF_APIS = [
@@ -79,6 +86,43 @@ function detectPlatform(url) {
   if (cleanUrl.includes('vimeo.com')) return 'vimeo';
   if (cleanUrl.includes('reddit.com')) return 'reddit';
   return 'unknown';
+}
+
+async function downloadFile(downloadUrl, filename) {
+  try {
+    console.log(`⬇️ Downloading file: ${filename}`);
+    
+    // Ensure downloads directory exists
+    await fs.mkdir(DOWNLOADS_DIR, { recursive: true });
+    
+    const filePath = path.join(DOWNLOADS_DIR, filename);
+    
+    const response = await axios({
+      method: 'GET',
+      url: downloadUrl,
+      responseType: 'stream',
+      timeout: 60000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://www.youtube.com/',
+        'Accept': '*/*'
+      }
+    });
+    
+    const writer = createWriteStream(filePath);
+    response.data.pipe(writer);
+    
+    return new Promise((resolve, reject) => {
+      writer.on('finish', () => {
+        console.log(`✅ File downloaded: ${filename}`);
+        resolve(filePath);
+      });
+      writer.on('error', reject);
+    });
+  } catch (error) {
+    console.error(`❌ Download failed for ${filename}: ${error.message}`);
+    throw error;
+  }
 }
 
 async function tryDirectAPIs(url, platform) {
@@ -155,55 +199,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Download proxy endpoint for handling protected URLs
-app.get('/proxy-download/:downloadId', async (req, res) => {
-  const { downloadId } = req.params;
-  const { url } = req.query;
-  
-  if (!url) {
-    return res.status(400).json({ error: 'URL parameter is required' });
-  }
-  
-  try {
-    console.log(`🔄 Proxying download: ${url}`);
-    
-    const response = await axios({
-      method: 'GET',
-      url: decodeURIComponent(url),
-      responseType: 'stream',
-      timeout: 30000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://www.youtube.com/',
-        'Accept': '*/*',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    });
-    
-    // Set appropriate headers
-    res.set({
-      'Content-Type': response.headers['content-type'] || 'application/octet-stream',
-      'Content-Length': response.headers['content-length'],
-      'Content-Disposition': `attachment; filename="${downloadId}.mp4"`,
-      'Cache-Control': 'no-cache'
-    });
-    
-    // Pipe the response
-    response.data.pipe(res);
-    
-    response.data.on('error', (error) => {
-      console.error(`❌ Proxy download error: ${error.message}`);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Download failed' });
-      }
-    });
-    
-  } catch (error) {
-    console.error(`❌ Proxy download failed: ${error.message}`);
-    res.status(500).json({ error: `Proxy download failed: ${error.message}` });
-  }
-});
 
 // Main download endpoint - BULLETPROOF approach
 app.post('/download', async (req, res) => {
@@ -290,32 +285,40 @@ app.post('/download', async (req, res) => {
       if (result.success) {
         console.log(`✅ BROWSER AUTOMATION SUCCESS: ${result.method}`);
         
-        // Generate download ID for proxy
-        const downloadId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-        
-        // Check if URL needs proxying (Google Video URLs)
-        let finalDownloadUrl = result.downloadUrl;
-        if (result.downloadUrl.includes('googlevideo.com') || result.downloadUrl.includes('youtube.com')) {
-          finalDownloadUrl = `${req.protocol}://${req.get('host')}/proxy-download/${downloadId}?url=${encodeURIComponent(result.downloadUrl)}`;
-          console.log(`🔄 Using proxy URL for protected content: ${finalDownloadUrl}`);
+        try {
+          // Generate unique filename
+          const timestamp = Date.now();
+          const randomId = Math.random().toString(36).substr(2, 9);
+          const extension = userPrefs.format === 'audio' ? 'mp3' : 'mp4';
+          const filename = `${platform}_${timestamp}_${randomId}.${extension}`;
+          
+          // Download the file locally
+          await downloadFile(result.downloadUrl, filename);
+          
+          // Return local file URL
+          const localFileUrl = `${req.protocol}://${req.get('host')}/files/${filename}`;
+          
+          return res.json({
+            success: true,
+            url: url,
+            platform: platform,
+            data: {
+              downloadUrl: localFileUrl,
+              originalUrl: result.downloadUrl,
+              filename: filename,
+              method: result.method,
+              service: result.service,
+              quality: result.quality || 'HD',
+              tier: result.tier,
+              tierName: result.tierName
+            },
+            userPreferences: userPrefs,
+            timestamp: new Date().toISOString()
+          });
+        } catch (downloadError) {
+          console.error(`❌ File download failed: ${downloadError.message}`);
+          throw new Error(`File download failed: ${downloadError.message}`);
         }
-        
-        return res.json({
-          success: true,
-          url: url,
-          platform: platform,
-          data: {
-            downloadUrl: finalDownloadUrl,
-            originalUrl: result.downloadUrl,
-            method: result.method,
-            service: result.service,
-            quality: result.quality || 'HD',
-            tier: result.tier,
-            tierName: result.tierName
-          },
-          userPreferences: userPrefs,
-          timestamp: new Date().toISOString()
-        });
       } else {
         throw new Error(`Browser automation failed: ${result.error}`);
       }
@@ -433,30 +436,45 @@ app.post('/download/batch', async (req, res) => {
           await downloader.close();
           
           if (result.success) {
-            // Generate download ID for proxy
-            const downloadId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-            
-            // Check if URL needs proxying (Google Video URLs)
-            let finalDownloadUrl = result.downloadUrl;
-            if (result.downloadUrl.includes('googlevideo.com') || result.downloadUrl.includes('youtube.com')) {
-              finalDownloadUrl = `${req.protocol}://${req.get('host')}/proxy-download/${downloadId}?url=${encodeURIComponent(result.downloadUrl)}`;
+            try {
+              // Generate unique filename
+              const timestamp = Date.now();
+              const randomId = Math.random().toString(36).substr(2, 9);
+              const extension = userPrefs.format === 'audio' ? 'mp3' : 'mp4';
+              const filename = `${platform}_${timestamp}_${randomId}.${extension}`;
+              
+              // Download the file locally
+              await downloadFile(result.downloadUrl, filename);
+              
+              // Return local file URL
+              const localFileUrl = `${req.protocol}://${req.get('host')}/files/${filename}`;
+              
+              results.push({
+                success: true,
+                url: url,
+                platform: platform,
+                data: {
+                  downloadUrl: localFileUrl,
+                  originalUrl: result.downloadUrl,
+                  filename: filename,
+                  method: result.method,
+                  service: result.service,
+                  quality: 'HD',
+                  tier: 2
+                },
+                error: null
+              });
+              successCount++;
+            } catch (downloadError) {
+              console.error(`❌ Batch download failed for ${url}: ${downloadError.message}`);
+              results.push({
+                success: false,
+                url: url,
+                platform: platform,
+                data: null,
+                error: `File download failed: ${downloadError.message}`
+              });
             }
-            
-            results.push({
-              success: true,
-              url: url,
-              platform: platform,
-              data: {
-                downloadUrl: finalDownloadUrl,
-                originalUrl: result.downloadUrl,
-                method: result.method,
-                service: result.service,
-                quality: 'HD',
-                tier: 2
-              },
-              error: null
-            });
-            successCount++;
           } else {
             throw new Error('Browser automation failed');
           }
