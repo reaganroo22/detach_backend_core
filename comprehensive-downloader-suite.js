@@ -1,17 +1,18 @@
 /**
  * Comprehensive Video Downloader Suite
  * 
- * Integrates all three video download services with advanced error handling,
+ * Integrates four video download services with advanced error handling,
  * retry logic, and optimization based on extensive Playwright MCP testing.
  * 
  * FEATURES:
- * - 6-tier fallback system
+ * - 4-tier fallback system (GetLoady → SSVid → Squidlr → Cobalt)
  * - Platform-specific optimizations  
  * - Quality preference handling
  * - Rate limiting and retry logic
  * - Comprehensive error reporting
  * - Download progress tracking
  * - Batch download capabilities
+ * - Enhanced error detection for service failures
  */
 
 const { chromium } = require('playwright');
@@ -42,6 +43,7 @@ class ComprehensiveDownloaderSuite {
         getloady: 0,
         ssvid: 0,
         squidlr: 0,
+        cobalt: 0,
         backend: 0
       }
     };
@@ -161,7 +163,8 @@ class ComprehensiveDownloaderSuite {
     const support = {
       getloady: ['tiktok', 'instagram', 'pinterest', 'reddit', 'youtube', 'twitter', 'facebook'],
       ssvid: ['youtube', 'instagram', 'tiktok', 'twitter', 'facebook', 'linkedin', 'vimeo', 'soundcloud', 'dailymotion', 'reddit', 'pinterest', '9gag'],
-      squidlr: ['twitter', 'instagram', 'facebook', 'tiktok', 'linkedin']
+      squidlr: ['twitter', 'instagram', 'facebook', 'tiktok', 'linkedin'],
+      cobalt: ['youtube', 'tiktok', 'twitter', 'instagram', 'facebook', 'vimeo', 'reddit', 'soundcloud']
     };
     
     return support[service] || [];
@@ -447,12 +450,19 @@ class ComprehensiveDownloaderSuite {
     let convertButtonClicked = false;
     
     for (let i = 0; i < 30; i++) {
-      // Check for service errors
+      // Check for service errors and discontinuation
       try {
-        const errorElements = await this.page.$$('text="Error", text="Failed", text="not available", text="unavailable"');
+        const errorElements = await this.page.$$('text="Error", text="Failed", text="not available", text="unavailable", text="Service discontinued", text="Service is unavailable", text="503", text="500"');
         if (errorElements.length > 0) {
           this.log(`❌ SSVid: Error message detected on page - stopping attempts`);
           throw new Error('SSVid service error detected');
+        }
+        
+        // Check for US discontinuation message (service shut down in US as of May 2024)
+        const discontinuedElements = await this.page.$$('text="discontinued", text="terminated", text="attacks by US copyright", text="May 3, 2024"');
+        if (discontinuedElements.length > 0) {
+          this.log(`❌ SSVid: Service discontinued in this region - stopping attempts`);
+          throw new Error('SSVid service discontinued due to copyright restrictions');
         }
       } catch (e) {
         // Continue if we can't check for errors
@@ -558,9 +568,28 @@ class ComprehensiveDownloaderSuite {
     // Squidlr auto-processes, wait for redirect
     await this.page.waitForTimeout(3000);
     
-    // Enhanced processing detection
+    // Enhanced processing detection with better error handling
     for (let i = 0; i < 20; i++) {
       const currentUrl = this.page.url();
+      
+      // Check for various error conditions
+      try {
+        const errorElements = await this.page.$$('text="Oh no! Something went wrong", text="Content not found", text="unavailable", text="Error", text="Failed"');
+        if (errorElements.length > 0) {
+          this.log(`❌ Squidlr: Error message detected - stopping attempts`);
+          throw new Error('Squidlr: Content not found or service unavailable');
+        }
+        
+        // Check for Blazor framework errors
+        const blazorErrors = await this.page.$$('text="Blazor", text="An unhandled error has occurred"');
+        if (blazorErrors.length > 0) {
+          this.log(`❌ Squidlr: Blazor framework error detected - stopping attempts`);
+          throw new Error('Squidlr: Application framework error');
+        }
+      } catch (e) {
+        if (e.message.includes('Squidlr:')) throw e;
+        // Continue if we can't check for errors
+      }
       
       // Check for error page
       if (currentUrl.includes('/download')) {
@@ -622,6 +651,100 @@ class ComprehensiveDownloaderSuite {
     throw new Error('Squidlr: Timeout after 40 seconds');
   }
 
+  /**
+   * TIER 4: Cobalt.tools - Privacy-focused downloader
+   */
+  async downloadWithCobalt(url, platform) {
+    this.log(`🎯 Tier 4: Cobalt download for ${platform}`);
+    this.stats.tierUsage.cobalt++;
+    
+    const { getDownloadUrl, isDownloadStarted, getDownloadedFile } = await this.setupDownloadInterception();
+    
+    await this.page.goto('https://cobalt.tools/', { waitUntil: 'networkidle', timeout: 30000 });
+    
+    // Wait for Cloudflare and any loading
+    await this.page.waitForTimeout(5000);
+    
+    // Fill URL input
+    await this.page.waitForSelector('textbox[aria-label*="link input"], input[aria-label*="link input"]', { timeout: 10000 });
+    await this.page.fill('textbox[aria-label*="link input"]', url);
+    this.log('✏️ Cobalt: URL input filled');
+    
+    // Submit by pressing Enter
+    await this.page.press('textbox[aria-label*="link input"]', 'Enter');
+    
+    // Enhanced processing with error detection
+    for (let i = 0; i < 25; i++) {
+      // Check for service-specific errors
+      try {
+        const errorMessages = await this.page.$$('text="downloading is temporarily disabled", text="restrictions from", text="temporarily unavailable", text="Error", text="Failed"');
+        if (errorMessages.length > 0) {
+          this.log(`❌ Cobalt: Service restriction detected - stopping attempts`);
+          throw new Error('Cobalt: Platform downloading temporarily disabled');
+        }
+        
+        // Check for Cloudflare errors
+        const cloudflareErrors = await this.page.$$('text="cloudflare", text="checking if you\'re not a bot", text="challenge"');
+        if (cloudflareErrors.length > 0 && i > 10) { // Allow some time for Cloudflare to complete
+          this.log(`❌ Cobalt: Cloudflare challenge blocking access - stopping attempts`);
+          throw new Error('Cobalt: Access blocked by Cloudflare protection');
+        }
+      } catch (e) {
+        if (e.message.includes('Cobalt:')) throw e;
+        // Continue if we can't check for errors
+      }
+
+      // Check for download ready state
+      try {
+        const downloadButtons = await this.page.$$('button:has-text("download"), a[href*="download"], a[download]');
+        for (const button of downloadButtons) {
+          try {
+            const buttonText = await button.textContent();
+            if (buttonText && buttonText.toLowerCase().includes('download')) {
+              this.log(`🔗 Cobalt: Clicking download: ${buttonText}`);
+              await button.click();
+              await this.page.waitForTimeout(3000);
+              
+              const downloadedFile = getDownloadedFile();
+              if (downloadedFile) {
+                return {
+                  success: true,
+                  downloadUrl: getDownloadUrl(),
+                  localFile: downloadedFile,
+                  platform: platform,
+                  method: 'cobalt_browser_download',
+                  service: 'cobalt'
+                };
+              }
+            }
+          } catch (clickError) {
+            continue;
+          }
+        }
+      } catch (e) {
+        // No download buttons yet
+      }
+
+      // Check if download started
+      const downloadedFile = getDownloadedFile();
+      if (downloadedFile) {
+        return {
+          success: true,
+          downloadUrl: getDownloadUrl(),
+          localFile: downloadedFile,
+          platform: platform,
+          method: 'cobalt_browser_download',
+          service: 'cobalt'
+        };
+      }
+
+      await this.page.waitForTimeout(2000);
+      this.log(`Cobalt attempt ${i + 1}/25...`);
+    }
+
+    throw new Error('Cobalt: Timeout after 50 seconds');
+  }
+
   isValidVideoUrl(url, contentType = '') {
     return url && (
       url.includes('.mp4') ||
@@ -671,7 +794,8 @@ class ComprehensiveDownloaderSuite {
     const tiers = [
       { name: 'GetLoady', fn: () => this.downloadWithGetLoady(url, platform) },
       { name: 'SSVid', fn: () => this.downloadWithSSVid(url, platform) },  
-      { name: 'Squidlr', fn: () => this.downloadWithSquidlr(url, platform) }
+      { name: 'Squidlr', fn: () => this.downloadWithSquidlr(url, platform) },
+      { name: 'Cobalt', fn: () => this.downloadWithCobalt(url, platform) }
     ];
 
     let allErrors = [];
