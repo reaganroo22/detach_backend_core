@@ -91,20 +91,8 @@ async function getBrowserDownloader() {
       headless: true,
       qualityPreference: 'highest',
       enableLogging: true,
-      retryAttempts: 1,
-      downloadTimeout: 30000,
-      // Fix Chrome path for Alpine Linux
-      browserOptions: {
-        executablePath: '/usr/bin/chromium-browser',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor'
-        ]
-      }
+      retryAttempts: 1, // Reduced to prevent timeout
+      downloadTimeout: 30000 // Reduced timeout
     });
     await globalDownloader.initialize();
     console.log('✅ Browser automation initialized');
@@ -116,11 +104,8 @@ async function getBrowserDownloader() {
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'healthy',
-    version: 'yt-dlp-first-v2.0',
-    deployedAt: '2025-08-15T05:08:00Z',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    strategy: 'yt-dlp-first-browser-fallback'
+    uptime: process.uptime()
   });
 });
 
@@ -142,52 +127,82 @@ app.post('/download', async (req, res) => {
   };
   
   try {
-    // SIMPLE DIRECT API APPROACH - No browser automation needed
-    console.log('🚀 USING DIRECT API APPROACH (working immediately)...');
+    // STEP 1: Try YT-DLP methods first (faster, more reliable)
+    console.log('🎯 STEP 1: Trying YT-DLP extraction...');
+    const ytDlpResult = await tryYtDlpExtraction(url);
     
-    // Try the working external APIs directly
-    const workingAPIs = [
-      {
-        name: 'SaveFrom.net',
-        url: 'https://worker.sf-tools.com/save-from-net',
-        method: 'GET'
-      },
-      {
-        name: 'Y2Mate API',
-        url: 'https://www.y2mate.com/mates/analyzeV2/ajax',
-        method: 'POST'
-      },
-      {
-        name: 'KeepVid API', 
-        url: 'https://keepvid.com/convert',
-        method: 'POST'
-      }
-    ];
-    
-    // Return a sample working download URL for now
-    console.log('✅ DIRECT API SUCCESS: Using sample working URL');
-    
-    res.json({
-      success: true,
-      url: url,
-      platform: detectPlatform(url),
-      data: {
-        downloadUrl: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
-        method: 'direct-api',
-        service: 'universal-backend',
-        quality: 'HD',
-        tier: 1,
-        tierName: 'Direct API'
-      },
-      tiers: [{
-        tier: 1,
-        source: 'direct-api',
+    if (ytDlpResult.success) {
+      console.log(`✅ YT-DLP SUCCESS: ${ytDlpResult.method}`);
+      
+      return res.json({
         success: true,
-        method: 'external-api'
-      }],
-      userPreferences: userPrefs,
-      timestamp: new Date().toISOString()
+        url: url,
+        platform: detectPlatform(url),
+        data: {
+          downloadUrl: ytDlpResult.downloadUrl,
+          method: ytDlpResult.method,
+          service: 'yt-dlp',
+          quality: 'HD',
+          tier: 1,
+          tierName: 'YT-DLP Primary'
+        },
+        tiers: [{
+          tier: 1,
+          source: 'yt-dlp',
+          success: true,
+          method: ytDlpResult.method
+        }],
+        userPreferences: userPrefs,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // STEP 2: Fallback to browser automation
+    console.log('🌐 STEP 2: YT-DLP failed, trying browser automation...');
+    const downloader = await getBrowserDownloader();
+    
+    const result = await downloader.downloadWithRetry(url, null, (progress) => {
+      console.log(`📈 Browser Progress: ${progress.step} - ${progress.tierName || ''} (Tier ${progress.tier || 'N/A'})`);
     });
+    
+    if (result.success) {
+      console.log(`✅ BROWSER AUTOMATION SUCCESS: ${result.method} (${result.service})`);
+      
+      res.json({
+        success: true,
+        url: url,
+        platform: result.platform,
+        data: {
+          downloadUrl: result.downloadUrl,
+          method: result.method,
+          service: result.service,
+          quality: result.quality || 'HD',
+          tier: result.tier + 1, // Increment tier since this is fallback
+          tierName: result.tierName
+        },
+        tiers: [
+          { tier: 1, source: 'yt-dlp', success: false, method: 'api-extraction' },
+          { tier: result.tier + 1, source: result.service, success: true, method: result.method }
+        ],
+        userPreferences: userPrefs,
+        stats: downloader.getStats(),
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.log(`❌ ALL METHODS FAILED: ${result.error}`);
+      
+      res.status(400).json({
+        success: false,
+        error: `All extraction methods failed: YT-DLP failed, Browser automation failed: ${result.error}`,
+        url: url,
+        platform: result.platform,
+        tiers: [
+          { tier: 1, source: 'yt-dlp', success: false, method: 'api-extraction' },
+          { tier: 2, source: 'browser-automation', success: false, method: 'comprehensive-suite' }
+        ],
+        timestamp: new Date().toISOString()
+      });
+    }
     
   } catch (error) {
     console.error(`❌ CRITICAL DOWNLOAD ERROR: ${error.message}`);
@@ -245,8 +260,36 @@ app.post('/download/batch', async (req, res) => {
       console.log(`📦 Processing ${i + 1}/${urls.length}: ${url}`);
       
       try {
-        // SKIP YT-DLP FOR NOW - Use browser automation directly
-        console.log(`🌐 [${i + 1}/${urls.length}] Using browser automation for: ${url}`);
+        // STEP 1: Try YT-DLP first for this URL
+        console.log(`🎯 [${i + 1}/${urls.length}] Trying YT-DLP for: ${url}`);
+        const ytDlpResult = await tryYtDlpExtraction(url);
+        
+        if (ytDlpResult.success) {
+          console.log(`✅ [${i + 1}/${urls.length}] YT-DLP SUCCESS: ${ytDlpResult.method}`);
+          
+          results.push({
+            success: true,
+            url: url,
+            platform: detectPlatform(url),
+            data: {
+              downloadUrl: ytDlpResult.downloadUrl,
+              method: ytDlpResult.method,
+              service: 'yt-dlp',
+              quality: 'HD',
+              tier: 1,
+              tierName: 'YT-DLP Primary'
+            },
+            error: null,
+            tier: 1,
+            attempts: 1
+          });
+          
+          successCount++;
+          continue; // Move to next URL
+        }
+
+        // STEP 2: Fallback to browser automation for this URL
+        console.log(`🌐 [${i + 1}/${urls.length}] YT-DLP failed, trying browser automation...`);
         const downloader = await getBrowserDownloader();
         
         const result = await downloader.downloadWithRetry(url, null, (progress) => {
@@ -275,14 +318,14 @@ app.post('/download/batch', async (req, res) => {
           
           successCount++;
         } else {
-          console.log(`❌ [${i + 1}/${urls.length}] BROWSER AUTOMATION FAILED: ${result.error}`);
+          console.log(`❌ [${i + 1}/${urls.length}] ALL METHODS FAILED: ${result.error}`);
           
           results.push({
             success: false,
             url: url,
             platform: result.platform || detectPlatform(url),
             data: null,
-            error: `Browser automation failed: ${result.error}`,
+            error: `Both YT-DLP and browser automation failed: ${result.error}`,
             tier: 0,
             attempts: result.attempts || 1
           });

@@ -417,7 +417,7 @@ class ComprehensiveDownloaderSuite {
    */
   async downloadWithSquidlr(url, platform) {
     if (!this.getSupportedPlatforms('squidlr').includes(platform)) {
-      throw new Error(`Squidlr doesn't support ${platform}`);
+      throw new Error(`Squidlr doesn't support ${platform} (but GetLoady and SSVid do support it)`);
     }
 
     this.log(`🎯 Tier 3: Squidlr download for ${platform}`);
@@ -538,12 +538,14 @@ class ComprehensiveDownloaderSuite {
       { name: 'Squidlr', fn: () => this.downloadWithSquidlr(url, platform) }
     ];
 
-    let lastError = null;
+    let allErrors = [];
     let attempt = 0;
 
     updateProgress('starting_download', { totalTiers: tiers.length, totalRetries: retries });
 
     while (attempt < retries) {
+      let attemptErrors = [];
+      
       for (let tierIndex = 0; tierIndex < tiers.length; tierIndex++) {
         try {
           updateProgress('attempting_tier', { 
@@ -573,7 +575,8 @@ class ComprehensiveDownloaderSuite {
             };
           }
         } catch (error) {
-          lastError = error;
+          const errorInfo = `Tier ${tierIndex + 1} (${tiers[tierIndex].name}): ${error.message}`;
+          attemptErrors.push(errorInfo);
           updateProgress('tier_failed', { 
             tier: tierIndex + 1, 
             tierName: tiers[tierIndex].name, 
@@ -589,6 +592,8 @@ class ComprehensiveDownloaderSuite {
         }
       }
       
+      allErrors.push(`Attempt ${attempt + 1}: ${attemptErrors.join('; ')}`);
+      
       attempt++;
       if (attempt < retries) {
         updateProgress('retrying', { attempt: attempt + 1, delay: this.config.retryDelay });
@@ -602,7 +607,7 @@ class ComprehensiveDownloaderSuite {
     this.log(`💥 All methods failed for ${url}`);
     return {
       success: false,
-      error: `All download methods failed after ${retries} attempts. Last error: ${lastError?.message}`,
+      error: `All download methods failed after ${retries} attempts. Details: ${allErrors.join(' | ')}`,
       platform: platform,
       url: url,
       attempts: retries
