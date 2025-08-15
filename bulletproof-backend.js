@@ -90,34 +90,84 @@ function detectPlatform(url) {
 
 async function downloadFile(downloadUrl, filename) {
   try {
-    console.log(`⬇️ Downloading file: ${filename}`);
+    console.log(`⬇️ Downloading file: ${filename} from: ${downloadUrl}`);
     
     // Ensure downloads directory exists
     await fs.mkdir(DOWNLOADS_DIR, { recursive: true });
     
     const filePath = path.join(DOWNLOADS_DIR, filename);
     
+    // Determine appropriate headers based on URL
+    let headers = {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1'
+    };
+    
+    // Add specific headers for different platforms
+    if (downloadUrl.includes('googlevideo.com') || downloadUrl.includes('youtube.com')) {
+      headers['Referer'] = 'https://www.youtube.com/';
+      headers['Origin'] = 'https://www.youtube.com';
+    } else if (downloadUrl.includes('facebook.com') || downloadUrl.includes('fbcdn.net')) {
+      headers['Referer'] = 'https://www.facebook.com/';
+      headers['Origin'] = 'https://www.facebook.com';
+    } else if (downloadUrl.includes('instagram.com') || downloadUrl.includes('cdninstagram.com')) {
+      headers['Referer'] = 'https://www.instagram.com/';
+      headers['Origin'] = 'https://www.instagram.com';
+    }
+    
     const response = await axios({
       method: 'GET',
       url: downloadUrl,
       responseType: 'stream',
-      timeout: 60000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://www.youtube.com/',
-        'Accept': '*/*'
-      }
+      timeout: 120000, // 2 minutes for large files
+      maxRedirects: 10,
+      headers: headers,
+      validateStatus: (status) => status < 400 // Accept any status below 400
     });
+    
+    // Check content type to ensure we're downloading actual media
+    const contentType = response.headers['content-type'] || '';
+    console.log(`📁 Content-Type: ${contentType}, Content-Length: ${response.headers['content-length'] || 'unknown'}`);
+    
+    // Reject if we're getting HTML instead of media
+    if (contentType.includes('text/html') && !contentType.includes('video') && !contentType.includes('audio')) {
+      throw new Error(`Received HTML instead of media file. Content-Type: ${contentType}`);
+    }
     
     const writer = createWriteStream(filePath);
     response.data.pipe(writer);
     
     return new Promise((resolve, reject) => {
-      writer.on('finish', () => {
-        console.log(`✅ File downloaded: ${filename}`);
-        resolve(filePath);
+      writer.on('finish', async () => {
+        try {
+          // Verify file was actually downloaded and has reasonable size
+          const stats = await fs.stat(filePath);
+          console.log(`✅ File downloaded: ${filename}, Size: ${stats.size} bytes`);
+          
+          // Minimum file size check (at least 10KB for valid media)
+          if (stats.size < 10240) {
+            throw new Error(`Downloaded file too small (${stats.size} bytes), likely an error page`);
+          }
+          
+          resolve(filePath);
+        } catch (statError) {
+          reject(statError);
+        }
       });
-      writer.on('error', reject);
+      
+      writer.on('error', (error) => {
+        console.error(`❌ Write error for ${filename}: ${error.message}`);
+        reject(error);
+      });
+      
+      response.data.on('error', (error) => {
+        console.error(`❌ Download stream error for ${filename}: ${error.message}`);
+        reject(error);
+      });
     });
   } catch (error) {
     console.error(`❌ Download failed for ${filename}: ${error.message}`);
@@ -285,25 +335,55 @@ app.post('/download', async (req, res) => {
       if (result.success) {
         console.log(`✅ BROWSER AUTOMATION SUCCESS: ${result.method}`);
         
-        // For Supabase URLs, we need to call them as APIs to get the actual file
+        // Handle different URL types to get actual downloadable URLs
+        let actualDownloadUrl = result.downloadUrl;
+        
         if (result.downloadUrl.includes('supabase.co')) {
           console.log(`🔄 Calling Supabase API to get actual download URL: ${result.downloadUrl}`);
           try {
-            const supabaseResponse = await axios.post(result.downloadUrl, { url: url }, {
-              timeout: 30000,
-              headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-              }
-            });
+            // Try different Supabase API formats
+            let supabaseResponse;
             
-            if (supabaseResponse.data && supabaseResponse.data.downloadUrl) {
-              result.downloadUrl = supabaseResponse.data.downloadUrl;
-              console.log(`✅ Got actual download URL from Supabase: ${result.downloadUrl}`);
+            // Try POST with original URL
+            try {
+              supabaseResponse = await axios.post(result.downloadUrl, { url: url }, {
+                timeout: 30000,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+                }
+              });
+            } catch (postError) {
+              // Try GET with query parameter
+              supabaseResponse = await axios.get(`${result.downloadUrl}?url=${encodeURIComponent(url)}`, {
+                timeout: 30000,
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+                }
+              });
+            }
+            
+            // Extract download URL from various response formats
+            if (supabaseResponse.data) {
+              if (typeof supabaseResponse.data === 'string' && supabaseResponse.data.startsWith('http')) {
+                actualDownloadUrl = supabaseResponse.data;
+              } else if (supabaseResponse.data.downloadUrl) {
+                actualDownloadUrl = supabaseResponse.data.downloadUrl;
+              } else if (supabaseResponse.data.url) {
+                actualDownloadUrl = supabaseResponse.data.url;
+              } else if (supabaseResponse.data.link) {
+                actualDownloadUrl = supabaseResponse.data.link;
+              }
+              console.log(`✅ Got actual download URL from Supabase: ${actualDownloadUrl}`);
             }
           } catch (supabaseError) {
             console.error(`❌ Supabase API call failed: ${supabaseError.message}`);
-            // Continue with original URL
+            // If Supabase fails, try to extract direct video URL from GetLoady result
+            if (result.method === 'getloady_intercepted' && result.downloadUrl.includes('googlevideo.com')) {
+              // We have a direct Google Video URL from browser automation
+              actualDownloadUrl = result.downloadUrl;
+              console.log(`🔄 Using direct Google Video URL: ${actualDownloadUrl}`);
+            }
           }
         }
         
@@ -314,8 +394,8 @@ app.post('/download', async (req, res) => {
           const extension = userPrefs.format === 'audio' ? 'mp3' : 'mp4';
           const filename = `${platform}_${timestamp}_${randomId}.${extension}`;
           
-          // Download the file locally
-          await downloadFile(result.downloadUrl, filename);
+          // Download the file locally using the actual download URL
+          await downloadFile(actualDownloadUrl, filename);
           
           // Return local file URL
           const localFileUrl = `${req.protocol}://${req.get('host')}/files/${filename}`;
@@ -327,6 +407,7 @@ app.post('/download', async (req, res) => {
             data: {
               downloadUrl: localFileUrl,
               originalUrl: result.downloadUrl,
+              actualDownloadUrl: actualDownloadUrl,
               filename: filename,
               method: result.method,
               service: result.service,
@@ -482,14 +563,50 @@ app.post('/download/batch', async (req, res) => {
           
           if (result.success) {
             try {
+              // Handle different URL types to get actual downloadable URLs (same logic as single download)
+              let actualDownloadUrl = result.downloadUrl;
+              
+              if (result.downloadUrl.includes('supabase.co')) {
+                try {
+                  let supabaseResponse;
+                  try {
+                    supabaseResponse = await axios.post(result.downloadUrl, { url: url }, {
+                      timeout: 30000,
+                      headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+                    });
+                  } catch (postError) {
+                    supabaseResponse = await axios.get(`${result.downloadUrl}?url=${encodeURIComponent(url)}`, {
+                      timeout: 30000,
+                      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+                    });
+                  }
+                  
+                  if (supabaseResponse.data) {
+                    if (typeof supabaseResponse.data === 'string' && supabaseResponse.data.startsWith('http')) {
+                      actualDownloadUrl = supabaseResponse.data;
+                    } else if (supabaseResponse.data.downloadUrl) {
+                      actualDownloadUrl = supabaseResponse.data.downloadUrl;
+                    } else if (supabaseResponse.data.url) {
+                      actualDownloadUrl = supabaseResponse.data.url;
+                    } else if (supabaseResponse.data.link) {
+                      actualDownloadUrl = supabaseResponse.data.link;
+                    }
+                  }
+                } catch (supabaseError) {
+                  if (result.method === 'getloady_intercepted' && result.downloadUrl.includes('googlevideo.com')) {
+                    actualDownloadUrl = result.downloadUrl;
+                  }
+                }
+              }
+              
               // Generate unique filename
               const timestamp = Date.now();
               const randomId = Math.random().toString(36).substr(2, 9);
               const extension = userPrefs.format === 'audio' ? 'mp3' : 'mp4';
               const filename = `${platform}_${timestamp}_${randomId}.${extension}`;
               
-              // Download the file locally
-              await downloadFile(result.downloadUrl, filename);
+              // Download the file locally using actual download URL
+              await downloadFile(actualDownloadUrl, filename);
               
               // Return local file URL
               const localFileUrl = `${req.protocol}://${req.get('host')}/files/${filename}`;
@@ -501,6 +618,7 @@ app.post('/download/batch', async (req, res) => {
                 data: {
                   downloadUrl: localFileUrl,
                   originalUrl: result.downloadUrl,
+                  actualDownloadUrl: actualDownloadUrl,
                   filename: filename,
                   method: result.method,
                   service: result.service,
