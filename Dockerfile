@@ -12,6 +12,12 @@ RUN apk add --no-cache \
     curl \
     xvfb \
     chromium \
+    chromium-chromedriver \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
     && python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip
 
