@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Main application
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - MCP_PLAYWRIGHT_URL=http://playwright-mcp:8931
+    depends_on:
+      - playwright-mcp
+    networks:
+      - app-network
+
+  # Playwright MCP Server as fallback/checking mechanism
+  playwright-mcp:
+    image: mcr.microsoft.com/playwright/mcp:latest
+    ports:
+      - "8931:8931"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8931
+      - HEADLESS=true
+      - TIMEOUT=30000
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8931/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Alternative: Community Playwright MCP Docker
+  playwright-mcp-community:
+    image: acuvity/mcp-server-playwright:latest
+    ports:
+      - "8932:8932"
+    environment:
+      - PORT=8932
+      - HEADLESS=true
+    networks:
+      - app-network
+    profiles:
+      - alternative
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  playwright-data:
+    driver: local

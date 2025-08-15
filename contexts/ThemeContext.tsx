@@ -16,6 +16,7 @@ export interface Theme {
     error: string;
     warning: string;
     shadow: string;
+    white: string;
   };
   isDark: boolean;
 }
@@ -35,6 +36,7 @@ const lightTheme: Theme = {
     error: '#dc2626', 
     warning: '#fef3c7',
     shadow: '#00000020', // Much softer shadow
+    white: '#ffffff',
   },
   isDark: false,
 };
@@ -54,6 +56,7 @@ const darkTheme: Theme = {
     error: '#ef4444',
     warning: '#a16207',
     shadow: '#000000',
+    white: '#ffffff',
   },
   isDark: true,
 };

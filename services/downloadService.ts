@@ -187,11 +187,14 @@ class DownloadService {
   }
 
   async addDownload(url: string, title?: string): Promise<string> {
+    console.log('📥 addDownload called with URL:', url);
     const platform = this.detectPlatform(url);
     if (!platform) {
+      console.error('❌ Unsupported platform for URL:', url);
       throw new Error('Unsupported platform');
     }
 
+    console.log('✅ Platform detected:', platform);
     const id = this.generateId();
     const contentType = this.detectContentType(platform, url);
     const downloadItem: DownloadItem = {
@@ -206,11 +209,16 @@ class DownloadService {
 
     this.downloads.set(id, downloadItem);
     await this.saveDownloadsToStorage();
+    console.log('💾 Download item saved with ID:', id);
     
     // Check if auto-download is enabled
     const settings = settingsService.getSettings();
+    console.log('⚙️ Auto-download enabled:', settings.autoDownload);
     if (settings.autoDownload) {
+      console.log('🚀 Starting auto-download for ID:', id);
       this.startDownload(id);
+    } else {
+      console.log('⏸️ Auto-download disabled, download stays pending');
     }
     
     return id;
@@ -232,19 +240,29 @@ class DownloadService {
   }
 
   async startDownload(id: string) {
+    console.log('🚀 startDownload called for ID:', id);
     const item = this.downloads.get(id);
-    if (!item) return;
+    if (!item) {
+      console.error('❌ Download item not found for ID:', id);
+      return;
+    }
+
+    console.log('📱 Starting download for:', item.url, 'Platform:', item.platform);
 
     try {
       // Test backend connectivity first
+      console.log('🔍 Testing backend connectivity...');
       const isBackendOnline = await this.testBackendConnectivity();
       if (!isBackendOnline) {
+        console.error('❌ Backend connectivity test failed');
         throw new Error('Backend server is currently unavailable. Please check your internet connection and try again later.');
       }
+      console.log('✅ Backend connectivity confirmed');
 
       item.status = 'downloading';
       this.downloads.set(id, item);
       await this.saveDownloadsToStorage();
+      console.log('📊 Status updated to downloading');
 
       // Use universal backend with 6-tier fallback system
       const downloadData = await this.getUniversalDownloadUrl(item.url);
@@ -364,12 +382,24 @@ class DownloadService {
   private async getUniversalDownloadUrl(url: string): Promise<{url: string, metadata: any} | null> {
     try {
       const apiUrl = getApiUrl(API_CONFIG.ENDPOINTS.DOWNLOAD);
+      const settings = settingsService.getSettings();
+      
       console.log('🚀 Using Universal Backend with 6-tier fallback system for:', url);
       console.log('📡 API URL:', apiUrl);
       console.log('🔗 Base URL:', API_CONFIG.BASE_URL);
+      console.log('⚙️ User Settings:', {
+        format: settings.downloadFormat,
+        audioQuality: settings.audioQuality,
+        videoQuality: settings.videoQuality,
+        maxFileSize: settings.maxFileSize
+      });
       
       const response = await axios.post(apiUrl, {
-        url: url
+        url: url,
+        format: settings.downloadFormat, // 'audio' or 'video'
+        audioQuality: settings.audioQuality, // 'high' | 'medium' | 'low'
+        videoQuality: settings.videoQuality, // 'high' | 'medium' | 'low' 
+        maxFileSize: settings.maxFileSize // Size limit in MB
       }, {
         timeout: 180000, // 3 minutes timeout for tier processing
         headers: {
