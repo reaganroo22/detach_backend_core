@@ -23,11 +23,17 @@ app.use('/download', (req, res, next) => {
   next();
 });
 
+// Load environment variables
+require('dotenv').config();
+
 const PORT = process.env.PORT || 3000;
 
 // Create downloads directory and serve static files
-const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
-app.use('/files', express.static(DOWNLOADS_DIR));
+const DOWNLOADS_DIR = process.env.DOWNLOADS_DIR || path.join(__dirname, 'downloads');
+app.use('/files', express.static(DOWNLOADS_DIR, {
+  maxAge: process.env.STATIC_FILE_CACHE || 86400000, // 24 hours default
+  etag: true
+}));
 
 // Working API endpoints that don't require browser automation
 const BULLETPROOF_APIS = [
@@ -301,13 +307,13 @@ app.post('/download', async (req, res) => {
       
       console.log('🚀 Initializing browser automation...');
       const downloader = new ComprehensiveDownloaderSuite({
-        headless: true,
+        headless: process.env.HEADLESS !== 'false' ? 'new' : false
         qualityPreference: 'highest',
         enableLogging: true,
         retryAttempts: 2,
         downloadTimeout: 90000, // 90 seconds - proper time for automation
         browserOptions: {
-          executablePath: '/usr/bin/chromium-browser',
+          executablePath: process.env.CHROME_EXECUTABLE_PATH || (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/usr/bin/google-chrome'),
           args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -315,10 +321,22 @@ app.post('/download', async (req, res) => {
             '--disable-gpu',
             '--disable-web-security',
             '--disable-features=VizDisplayCompositor',
-            '--headless=new',
             '--disable-extensions',
             '--disable-plugins',
-            '--mute-audio'
+            '--mute-audio',
+            '--disable-background-timer-throttling',
+            '--disable-renderer-backgrounding',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-features=TranslateUI',
+            '--disable-ipc-flooding-protection',
+            '--enable-features=NetworkService,NetworkServiceLogging',
+            '--force-color-profile=srgb',
+            '--disable-component-update',
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--password-store=basic',
+            '--use-mock-keychain',
+            '--shm-size=1gb'
           ]
         }
       });
@@ -537,11 +555,11 @@ app.post('/download/batch', async (req, res) => {
         try {
           const ComprehensiveDownloaderSuite = require('./comprehensive-downloader-suite');
           const downloader = new ComprehensiveDownloaderSuite({
-            headless: true,
+            headless: process.env.HEADLESS !== 'false' ? 'new' : false
             downloadTimeout: 90000, // 90 seconds per URL
             retryAttempts: 1,
             browserOptions: {
-              executablePath: '/usr/bin/chromium-browser',
+              executablePath: process.env.CHROME_EXECUTABLE_PATH || (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/usr/bin/google-chrome'),
               args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',

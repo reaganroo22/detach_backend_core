@@ -55,10 +55,13 @@ class ComprehensiveDownloaderSuite {
     // Ensure download directory exists
     await fs.mkdir(this.config.downloadPath, { recursive: true });
     
-    // Use browserOptions from config if available, otherwise use defaults
+    // Production-grade browser configuration for Ubuntu/Fly.io
     const launchOptions = this.config.browserOptions || {
-      headless: this.config.headless,
-      executablePath: '/usr/bin/chromium-browser', // Use Chromium on Alpine
+      headless: this.config.headless !== false ? 'new' : false, // Use new headless mode
+      executablePath: process.env.CHROME_EXECUTABLE_PATH || 
+        (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : 
+         process.env.NODE_ENV === 'production' ? '/ms-playwright/chromium-1140/chrome-linux/chrome' : 
+         '/usr/bin/google-chrome'),
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -67,10 +70,42 @@ class ComprehensiveDownloaderSuite {
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
+        '--disable-features=TranslateUI,VizDisplayCompositor',
         '--disable-ipc-flooding-protection',
         '--disable-blink-features=AutomationControlled',
-        '--no-first-run'
+        '--disable-component-extensions-with-background-pages',
+        '--disable-default-apps',
+        '--disable-extensions',
+        '--disable-features=Translate',
+        '--disable-background-timer-throttling',
+        '--disable-renderer-backgrounding',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-domain-reliability',
+        '--disable-sync',
+        '--disable-client-side-phishing-detection',
+        '--disable-features=VizDisplayCompositor',
+        '--run-all-compositor-stages-before-draw',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--enable-features=NetworkService,NetworkServiceLogging',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--force-color-profile=srgb',
+        '--metrics-recording-only',
+        '--disable-prompt-on-repost',
+        '--disable-hang-monitor',
+        '--disable-client-side-phishing-detection',
+        '--disable-component-update',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--no-pings',
+        '--password-store=basic',
+        '--use-mock-keychain',
+        '--disable-features=VizDisplayCompositor',
+        '--aggressive-cache-discard',
+        '--memory-pressure-off',
+        '--max_old_space_size=4096',
+        '--shm-size=1gb'
       ]
     };
     

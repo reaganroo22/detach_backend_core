@@ -1,58 +1,30 @@
-# Use Node.js image with support for local Chrome
-FROM node:18-alpine
+# Use official Playwright image with Ubuntu and pre-installed Chrome
+FROM mcr.microsoft.com/playwright:v1.54.0-noble
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV DISPLAY=:99
-
-# Install dependencies for Alpine including virtual display support
-RUN apk add --no-cache \
-    python3 \
-    py3-pip \
-    curl \
-    xvfb \
-    chromium \
-    chromium-chromedriver \
-    nss \
-    freetype \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    && python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --upgrade pip
-
-# Add virtual environment to PATH
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Install yt-dlp in virtual environment
-RUN pip install yt-dlp
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV CHROME_BIN=/ms-playwright/chromium-1140/chrome-linux/chrome
 
 # Set the working directory
 WORKDIR /app
 
+# Install additional dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install Node.js dependencies
+RUN npm ci --omit=dev
 
 # Copy the application code
 COPY . .
 
 # Create directories
 RUN mkdir -p /app/downloads
-
-# Create startup script with virtual display
-RUN echo '#!/bin/sh' > /app/start.sh && \
-    echo 'echo "🚀 Starting Universal Backend with local Chrome"' >> /app/start.sh && \
-    echo 'echo "📺 Starting virtual display..."' >> /app/start.sh && \
-    echo 'Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &' >> /app/start.sh && \
-    echo 'sleep 2' >> /app/start.sh && \
-    echo 'echo "🌟 Starting backend..."' >> /app/start.sh && \
-    echo 'exec npm start' >> /app/start.sh && \
-    chmod +x /app/start.sh && \
-    ls -la /app/start.sh && \
-    cat /app/start.sh
 
 # Expose the port
 EXPOSE 3000
@@ -61,5 +33,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
 
-# Start the application with virtual display
-CMD ["/app/start.sh"]
+# Start the application
+CMD ["npm", "start"]

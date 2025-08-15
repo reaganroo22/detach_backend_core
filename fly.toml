@@ -6,8 +6,10 @@ primary_region = 'iad'
 
 [env]
   NODE_ENV = 'production'
-  DISPLAY = ':99'
   PORT = '3000'
+  CHROME_EXECUTABLE_PATH = '/ms-playwright/chromium-1140/chrome-linux/chrome'
+  HEADLESS = 'true'
+  DOWNLOADS_DIR = '/app/downloads'
 
 [http_service]
   internal_port = 3000
@@ -24,5 +26,12 @@ primary_region = 'iad'
     path = '/health'
 
 [[vm]]
-  size = 'shared-cpu-1x'
-  memory = '1gb'
+  size = 'performance-1x'
+  memory = '2gb'
+  
+  # Enable shared memory for browser automation
+  [[vm.mounts]]
+    source = "shm"
+    destination = "/dev/shm"
+    type = "tmpfs"
+    size = "1gb"
