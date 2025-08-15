@@ -2,11 +2,12 @@
   "name": "universal-social-downloader-backend",
   "version": "2.0.0",
   "description": "Scalable Universal Social Media Downloader - Handles Millions of Concurrent Requests",
-  "main": "scalable-universal-backend.js",
+  "main": "working-backend.js",
   "scripts": {
-    "start": "node scalable-universal-backend.js",
+    "start": "node working-backend.js",
+    "start:scalable": "node scalable-universal-backend.js",
     "start:old": "node universal-downloader-backend.js",
-    "dev": "nodemon scalable-universal-backend.js",
+    "dev": "nodemon working-backend.js",
     "build": "echo 'No build step needed'",
     "test": "node test-universal-system.js"
   },
