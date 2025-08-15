@@ -285,6 +285,26 @@ app.post('/download', async (req, res) => {
       if (result.success) {
         console.log(`✅ BROWSER AUTOMATION SUCCESS: ${result.method}`);
         
+        // Check if we have a Supabase proxy URL - use it directly instead of downloading
+        if (result.downloadUrl.includes('supabase.co')) {
+          console.log(`🔄 Using Supabase proxy URL directly: ${result.downloadUrl}`);
+          return res.json({
+            success: true,
+            url: url,
+            platform: platform,
+            data: {
+              downloadUrl: result.downloadUrl,
+              method: result.method + '_proxy',
+              service: result.service,
+              quality: result.quality || 'HD',
+              tier: result.tier,
+              tierName: result.tierName
+            },
+            userPreferences: userPrefs,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
         try {
           // Generate unique filename
           const timestamp = Date.now();
@@ -325,6 +345,29 @@ app.post('/download', async (req, res) => {
       
     } catch (browserError) {
       console.error(`❌ Browser automation failed: ${browserError.message}`);
+      
+      // Check if the error contains a Supabase URL we can use
+      const errorMessage = browserError.message;
+      const supabaseMatch = errorMessage.match(/https:\/\/[^\/]*supabase\.co[^\s]+/);
+      
+      if (supabaseMatch) {
+        console.log(`🔄 Found Supabase URL in error, using it: ${supabaseMatch[0]}`);
+        return res.json({
+          success: true,
+          url: url,
+          platform: platform,
+          data: {
+            downloadUrl: supabaseMatch[0],
+            method: 'supabase-fallback',
+            service: 'bulletproof-backend',
+            quality: 'HD',
+            tier: 2,
+            tierName: 'Supabase Proxy'
+          },
+          userPreferences: userPrefs,
+          timestamp: new Date().toISOString()
+        });
+      }
       
       // Method 3: Final fallback with working sample
       console.log(`📱 Using working sample as final fallback...`);
