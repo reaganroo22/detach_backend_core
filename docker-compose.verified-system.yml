@@ -1,0 +1,132 @@
+version: '3.8'
+
+services:
+  # Main downloader application
+  downloader-app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - MCP_PLAYWRIGHT_URL=http://playwright-mcp:8931
+      - LOCAL_AI_URL=http://local-ai:1234
+      - ENABLE_MCP_VERIFICATION=true
+    depends_on:
+      - playwright-mcp
+      - local-ai
+    networks:
+      - verified-network
+    volumes:
+      - ./downloads:/app/downloads
+
+  # Docker Playwright MCP Server for verification
+  playwright-mcp:
+    image: mcr.microsoft.com/playwright/mcp:latest
+    ports:
+      - "8931:8931"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8931
+      - HEADLESS=true
+      - TIMEOUT=30000
+      - LOG_LEVEL=info
+    networks:
+      - verified-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8931/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # Local AI Model (LocalAI with Llama)
+  local-ai:
+    image: localai/localai:latest
+    ports:
+      - "1234:8080"
+    environment:
+      - MODELS_PATH=/models
+      - THREADS=4
+      - CONTEXT_SIZE=512
+      - DEBUG=true
+    volumes:
+      - ./ai-models:/models
+      - ./localai-config:/config
+    networks:
+      - verified-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    # Uncomment if you have GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Alternative: Ollama for local AI
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - verified-network
+    profiles:
+      - ollama
+    restart: unless-stopped
+
+  # Redis for caching verification results
+  redis-cache:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=verification_cache_2024
+    command: redis-server --requirepass verification_cache_2024
+    networks:
+      - verified-network
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  # Optional: Monitoring dashboard
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning
+    networks:
+      - verified-network
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+networks:
+  verified-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  ollama-data:
+    driver: local
+  redis-data:
+    driver: local
+  grafana-data:
+    driver: local

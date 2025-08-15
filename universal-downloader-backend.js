@@ -50,7 +50,7 @@ const getBrowserConfig = () => {
     console.log('🐳 Docker environment detected - using system Chromium');
     return {
       executablePath: '/usr/bin/chromium',
-      headless: true, // Force headless in production for stability
+      headless: false, // Non-headless for testing and debugging
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-web-security',
@@ -75,22 +75,46 @@ const getBrowserConfig = () => {
       ]
     };
   } else {
-    console.log('💻 Local development - using system Chrome');
+    console.log('💻 Local development - using system Chrome with anti-detection');
     return {
       headless: false, // Non-headless for better success rates
       args: [
+        // Anti-detection arguments
         '--disable-blink-features=AutomationControlled',
+        '--exclude-switches=enable-automation',
+        '--disable-extensions-except',
+        '--disable-plugins-discovery',
         '--disable-web-security',
         '--no-sandbox',
-        '--disable-setuid-sandbox'
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-background-timer-throttling',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI,VizDisplayCompositor',
+        '--disable-ipc-flooding-protection',
+        '--disable-background-networking',
+        '--disable-sync',
+        '--disable-default-apps',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-client-side-phishing-detection',
+        '--disable-hang-monitor',
+        '--disable-popup-blocking',
+        '--disable-prompt-on-repost',
+        '--disable-domain-reliability',
+        '--disable-component-update',
+        '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
       ]
     };
   }
 };
 
 // Tier 1: GetLoady
-async function tryGetLoady(url, platform) {
+async function tryGetLoady(url, platform, userPrefs = {}) {
   console.log(`🔄 Tier 1: Trying GetLoady for ${platform}...`);
+  console.log(`⚙️ User Preferences: ${userPrefs.format} quality, ${userPrefs.audioQuality} audio, ${userPrefs.videoQuality} video`);
   
   let browser;
   try {
@@ -109,10 +133,55 @@ async function tryGetLoady(url, platform) {
   
   try {
     const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
+      permissions: ['geolocation'],
+      geolocation: { latitude: 40.7128, longitude: -74.0060 },
+      colorScheme: 'light',
+      extraHTTPHeaders: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+      }
     });
     
     const page = await context.newPage();
+    
+    // Anti-detection JavaScript injection
+    await page.addInitScript(() => {
+      // Override the navigator.webdriver property
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
+      
+      // Mock permissions
+      const originalQuery = window.navigator.permissions.query;
+      return window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission }) :
+          originalQuery(parameters)
+      );
+      
+      // Override plugins length
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      
+      // Override languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+      
+      // Mock chrome object
+      window.chrome = {
+        runtime: {},
+      };
+    });
     const capturedUrls = [];
     
     // Monitor both new tabs (Google Video URLs) and downloads (direct files)
@@ -309,7 +378,7 @@ async function tryGetLoady(url, platform) {
 }
 
 // Tier 2: SSVid.net
-async function trySSVid(url) {
+async function trySSVid(url, userPrefs = {}) {
   console.log('🔄 Tier 2: Trying SSVid.net...');
   
   const browserConfig = getBrowserConfig();
@@ -363,54 +432,68 @@ async function trySSVid(url) {
     await page.goto('https://ssvid.net/en', { waitUntil: 'networkidle' });
     await page.waitForTimeout(2000);
     
-    // Input URL
-    const input = await page.locator('#search__input');
-    await input.click();
-    await input.fill(url);
+    // Input URL using proper selector from codegen
+    console.log('🔍 SSVid: Looking for searchbox...');
+    await page.getByRole('searchbox', { name: 'Search' }).click();
+    console.log('✅ SSVid: Found and clicked searchbox');
+    
+    await page.getByRole('searchbox', { name: 'Search' }).fill(url);
+    console.log('✅ SSVid: Filled URL:', url);
     await page.waitForTimeout(1000);
     
-    // Click Start
-    await page.click('button:has-text("Start")');
+    // Click Start button
+    console.log('🔍 SSVid: Looking for Start button...');
+    await page.getByRole('button', { name: 'Start' }).click();
+    console.log('✅ SSVid: Start button clicked');
     await page.waitForTimeout(8000);
     
-    // Click Convert
-    const convertButtons = await page.locator('button:has-text("Convert")');
-    const buttonCount = await convertButtons.count();
+    // Click Convert button - use the specific row selector from codegen
+    console.log('🔍 SSVid: Looking for Convert button...');
+    const convertButton = page.getByRole('row', { name: 'MP4 auto quality (MB) Convert' }).getByRole('button');
     
-    if (buttonCount > 0) {
-      await convertButtons.nth(0).click();
-      
-      // Wait up to 2.5 minutes for download button
-      const maxWaitTime = 150000; // 2.5 minutes
-      const checkInterval = 15000; // 15 seconds
+    if (await convertButton.isVisible()) {
+      await convertButton.click();
+      console.log('✅ SSVid: Convert button clicked');
+    }
+    
+    // Always look for download button (whether convert was clicked or not)
+    console.log('🔍 SSVid: Looking for Download button...');
+    const maxWaitTime = 150000; // 2.5 minutes
+    const checkInterval = 15000; // 15 seconds
       const startTime = Date.now();
       
-      let downloadClicked = false;
-      while (Date.now() - startTime < maxWaitTime && !downloadClicked) {
-        const downloadSelectors = [
-          'button:has-text("Download")',
-          '.btn:has-text("Download")',
-          'a:has-text("Download")'
-        ];
-        
-        for (const selector of downloadSelectors) {
-          try {
-            const downloadBtn = await page.locator(selector).first();
-            if (await downloadBtn.isVisible()) {
-              await downloadBtn.click();
-              downloadClicked = true;
-              await page.waitForTimeout(5000);
-              break;
-            }
-          } catch (e) {
-            continue;
+    let downloadClicked = false;
+    while (Date.now() - startTime < maxWaitTime && !downloadClicked) {
+      // Look for download links and buttons using multiple selectors
+      const downloadSelectors = [
+        'a:has-text("Download")',
+        'button:has-text("Download")', 
+        '.btn:has-text("Download")',
+        'a[download]',
+        'a[href*=".mp4"]',
+        'a[href*=".mp3"]'
+      ];
+      
+      for (const selector of downloadSelectors) {
+        try {
+          const downloadBtn = await page.locator(selector).first();
+          if (await downloadBtn.isVisible()) {
+            console.log(`✅ SSVid: Found download button with selector: ${selector}`);
+            await downloadBtn.click();
+            downloadClicked = true;
+            await page.waitForTimeout(5000);
+            break;
           }
-        }
-        
-        if (!downloadClicked) {
-          await page.waitForTimeout(checkInterval);
+        } catch (e) {
+          continue;
         }
       }
+      
+      if (!downloadClicked) {
+        console.log(`⏳ SSVid: Still waiting for download button... (${Math.round((Date.now() - startTime) / 1000)}s)`);
+        await page.waitForTimeout(checkInterval);
+      }
+    }
     }
     
     await browser.close();
@@ -431,7 +514,7 @@ async function trySSVid(url) {
 }
 
 // Tier 3: Squidlr.com
-async function trySquidlr(url, platform) {
+async function trySquidlr(url, platform, userPrefs = {}) {
   console.log(`🔄 Tier 3: Trying Squidlr for ${platform}...`);
   
   // Squidlr doesn't support YouTube
@@ -447,10 +530,55 @@ async function trySquidlr(url, platform) {
   
   try {
     const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
+      permissions: ['geolocation'],
+      geolocation: { latitude: 40.7128, longitude: -74.0060 },
+      colorScheme: 'light',
+      extraHTTPHeaders: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+      }
     });
     
     const page = await context.newPage();
+    
+    // Anti-detection JavaScript injection
+    await page.addInitScript(() => {
+      // Override the navigator.webdriver property
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
+      
+      // Mock permissions
+      const originalQuery = window.navigator.permissions.query;
+      return window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission }) :
+          originalQuery(parameters)
+      );
+      
+      // Override plugins length
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      
+      // Override languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+      
+      // Mock chrome object
+      window.chrome = {
+        runtime: {},
+      };
+    });
     const capturedUrls = [];
     
     // Monitor downloads and new tabs
@@ -509,43 +637,54 @@ async function trySquidlr(url, platform) {
     await page.goto(`https://squidlr.com/${platform}`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(5000);
     
-    // Input URL by pasting (required by Squidlr)
-    const inputSelector = 'input[type="text"], input[placeholder*="URL"], textarea';
-    await page.waitForSelector(inputSelector, { timeout: 15000 });
+    // Input URL using proper selector from codegen
+    console.log('🔍 Looking for Download URL textbox...');
+    await page.getByRole('textbox', { name: 'Download URL' }).click();
+    console.log('✅ Found and clicked Download URL textbox');
     
-    await page.fill(inputSelector, '');
-    await page.evaluate(async (url) => {
-      await navigator.clipboard.writeText(url);
-    }, url);
+    await page.getByRole('textbox', { name: 'Download URL' }).fill(url);
+    console.log('✅ Filled URL:', url);
     
-    await page.focus(inputSelector);
-    await page.keyboard.press('Meta+V');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(2000);
     
-    // Wait for processing and download options (up to 2.5 minutes)
-    const maxWait = 150000;
-    const checkInterval = 15000;
+    // Wait for URL processing and download buttons to appear  
+    console.log('🔍 Squidlr: Waiting for URL processing...');
+    const maxWait = 120000; // 2 minutes
+    const checkInterval = 5000; // 5 seconds
     const startTime = Date.now();
     
     let downloadProcessed = false;
     while (Date.now() - startTime < maxWait && !downloadProcessed) {
-      // Look for cloud download icons
-      const cloudDownloadIcons = await page.$$('span.oi.oi-cloud-download, span[class*="oi-cloud-download"]');
+      // Look for resolution buttons (like "Best resolution 576 x 1024")
+      const resolutionButtons = await page.locator('button').filter({ hasText: /Best resolution|resolution|\d+x\d+/i });
+      const buttonCount = await resolutionButtons.count();
       
-      if (cloudDownloadIcons.length > 0) {
-        try {
-          await cloudDownloadIcons[0].click();
+      if (buttonCount > 0) {
+        console.log(`✅ Squidlr: Found ${buttonCount} resolution buttons`);
+        
+        // Click the first (best) resolution button  
+        await resolutionButtons.first().click();
+        console.log('✅ Squidlr: Clicked resolution button');
+        downloadProcessed = true;
+        break;
+      }
+      
+      // Check if download button is enabled (not disabled)
+      const downloadButtons = await page.locator('button').filter({ hasText: /download/i });
+      const dlButtonCount = await downloadButtons.count();
+      
+      if (dlButtonCount > 0) {
+        const firstBtn = downloadButtons.first();
+        const isEnabled = await firstBtn.isEnabled();
+        
+        if (isEnabled) {
+          console.log('✅ Squidlr: Found enabled download button');
+          await firstBtn.click();
+          console.log('✅ Squidlr: Clicked download button');
           downloadProcessed = true;
-          await page.waitForTimeout(3000);
-        } catch (e) {
-          const parentElement = await cloudDownloadIcons[0].evaluateHandle(el => 
-            el.closest('button, a, [onclick], [role="button"]')
-          );
-          if (parentElement) {
-            await parentElement.click();
-            downloadProcessed = true;
-            await page.waitForTimeout(3000);
-          }
+          break;
+        } else {
+          console.log(`⏳ Squidlr: Download button still disabled, waiting... (${Math.round((Date.now() - startTime) / 1000)}s)`);
         }
       }
       
@@ -595,14 +734,19 @@ async function trySquidlr(url, platform) {
 }
 
 // Tier 4: Railway Backend (yt-dlp implementation)
-async function tryRailwayBackend(url) {
+async function tryRailwayBackend(url, userPrefs = {}) {
   console.log('🔄 Tier 4: Trying Railway backend...');
+  console.log(`⚙️ Passing user preferences: ${userPrefs.format} format, ${userPrefs.audioQuality}/${userPrefs.videoQuality} quality`);
   
   try {
     const railwayUrl = 'https://detachbackend-production.up.railway.app';
     
     const response = await axios.post(`${railwayUrl}/download`, {
-      url: url
+      url: url,
+      format: userPrefs.format,
+      audioQuality: userPrefs.audioQuality,
+      videoQuality: userPrefs.videoQuality,
+      maxFileSize: userPrefs.maxFileSize
     }, {
       timeout: 60000, // 60 second timeout
       headers: {
@@ -640,14 +784,19 @@ async function tryRailwayBackend(url) {
 }
 
 // Tier 5: Vercel Backend (yt-dlp implementation)
-async function tryVercelBackend(url) {
+async function tryVercelBackend(url, userPrefs = {}) {
   console.log('🔄 Tier 5: Trying Vercel backend...');
+  console.log(`⚙️ Passing user preferences: ${userPrefs.format} format, ${userPrefs.audioQuality}/${userPrefs.videoQuality} quality`);
   
   try {
     const vercelUrl = 'https://detach-backend-454ebn3bh-detach1.vercel.app';
     
     const response = await axios.post(`${vercelUrl}/download`, {
-      url: url
+      url: url,
+      format: userPrefs.format,
+      audioQuality: userPrefs.audioQuality,
+      videoQuality: userPrefs.videoQuality,
+      maxFileSize: userPrefs.maxFileSize
     }, {
       timeout: 60000, // 60 second timeout
       headers: {
@@ -685,15 +834,40 @@ async function tryVercelBackend(url) {
 }
 
 // Tier 6: Local yt-dlp Backend (final fallback)
-async function tryLocalYtDlp(url) {
+async function tryLocalYtDlp(url, userPrefs = {}) {
   console.log('🔄 Tier 6: Trying local yt-dlp...');
+  console.log(`⚙️ User preferences: ${userPrefs.format} format, ${userPrefs.audioQuality}/${userPrefs.videoQuality} quality`);
   
   return new Promise((resolve) => {
     
     try {
-      // Use yt-dlp to get download URLs without downloading
-      const ytdlp = spawn('python3', [
-        '-m', 'yt_dlp',
+      // Build yt-dlp command based on user preferences
+      const ytdlpArgs = ['-m', 'yt_dlp'];
+      
+      // Format selection based on user preference
+      if (userPrefs.format === 'audio') {
+        ytdlpArgs.push('-f', 'bestaudio/best');
+        ytdlpArgs.push('-x'); // Extract audio
+        ytdlpArgs.push('--audio-format', 'mp3');
+        
+        // Audio quality mapping
+        const audioQualityMap = {
+          'high': '0', // Best quality
+          'medium': '5', // Medium quality
+          'low': '9' // Lower quality
+        };
+        ytdlpArgs.push('--audio-quality', audioQualityMap[userPrefs.audioQuality] || '0');
+      } else {
+        // Video format
+        const videoQualityMap = {
+          'high': 'best[height<=1080]',
+          'medium': 'best[height<=720]', 
+          'low': 'best[height<=480]'
+        };
+        ytdlpArgs.push('-f', videoQualityMap[userPrefs.videoQuality] || 'best[height<=720]');
+      }
+      
+      ytdlpArgs.push(
         '--get-url',
         '--get-title',
         '--get-duration',
@@ -701,7 +875,12 @@ async function tryLocalYtDlp(url) {
         '--no-warnings',
         '--user-agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
         url
-      ]);
+      );
+      
+      console.log('🛠️ yt-dlp command:', ytdlpArgs.join(' '));
+      
+      // Use yt-dlp to get download URLs without downloading
+      const ytdlp = spawn('python3', ytdlpArgs);
 
       let stdout = '';
       let stderr = '';
@@ -764,106 +943,114 @@ async function tryLocalYtDlp(url) {
 }
 
 // Main download endpoint
+// Import the comprehensive downloader suite
+const ComprehensiveDownloaderSuite = require('./comprehensive-downloader-suite');
+
 app.post('/download', async (req, res) => {
-  const { url } = req.body;
+  const { url, format, audioQuality, videoQuality, maxFileSize } = req.body;
   
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
   }
   
-  console.log(`\n🚀 DOWNLOAD REQUEST: ${url}`);
+  // Default preferences if not provided
+  const userPrefs = {
+    format: format || 'audio', // 'audio' or 'video'
+    audioQuality: audioQuality || 'high', // 'high' | 'medium' | 'low'
+    videoQuality: videoQuality || 'medium', // 'high' | 'medium' | 'low'
+    maxFileSize: maxFileSize || 100 // MB
+  };
+  
+  console.log(`\n🚀 ENHANCED DOWNLOAD REQUEST: ${url}`);
+  console.log(`⚙️ User Preferences:`, userPrefs);
   
   // Clean URL and detect platform
   const cleanUrl = url.split('?')[0];
-  const platform = detectPlatform(cleanUrl);
-  
-  console.log(`📱 Platform detected: ${platform}`);
   
   const results = {
     url: cleanUrl,
-    platform,
     tiers: [],
     success: false,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    userPreferences: userPrefs
   };
   
+  let downloader = null;
+  
   try {
-    // Tier 1: GetLoady (browser automation works!)
-    console.log('🚀 Starting Tier 1: GetLoady...');
-    try {
-      const tier1Result = await tryGetLoady(cleanUrl, platform);
-      results.tiers.push({ tier: 1, source: 'getloady', ...tier1Result });
+    // Initialize the comprehensive downloader suite
+    downloader = new ComprehensiveDownloaderSuite({
+      headless: true, // Always headless for production
+      qualityPreference: userPrefs.videoQuality === 'high' ? 'highest' : userPrefs.videoQuality,
+      enableLogging: true,
+      retryAttempts: 2,
+      downloadTimeout: 60000 // 1 minute timeout
+    });
+    
+    await downloader.initialize();
+    console.log('✅ Comprehensive Downloader Suite initialized');
+    
+    // Track progress and tier usage
+    const progressLog = [];
+    
+    const result = await downloader.downloadWithRetry(cleanUrl, null, (progress) => {
+      progressLog.push({
+        step: progress.step,
+        tier: progress.tier,
+        tierName: progress.tierName,
+        timestamp: new Date().toISOString()
+      });
+      console.log(`📈 Progress: ${progress.step} - ${progress.tierName || ''} (Tier ${progress.tier || 'N/A'})`);
+    });
+    
+    // Convert result to API format
+    if (result.success) {
+      results.success = true;
+      results.platform = result.platform;
+      results.data = {
+        downloadUrl: result.downloadUrl,
+        method: result.method,
+        service: result.service,
+        quality: result.quality || 'Unknown',
+        tier: result.tier,
+        tierName: result.tierName
+      };
+      results.tiers.push({
+        tier: result.tier,
+        source: result.service,
+        success: true,
+        method: result.method,
+        data: results.data
+      });
+      results.progressLog = progressLog;
+      results.stats = downloader.getStats();
       
-      if (tier1Result.success) {
-        results.success = true;
-        results.data = tier1Result.data;
-        console.log('✅ Tier 1 SUCCESS - GetLoady worked!');
-        return res.json(results);
-      }
-    } catch (error) {
-      console.error('❌ Tier 1 failed:', error.message);
-      results.tiers.push({ tier: 1, source: 'getloady', success: false, error: error.message });
-    }
-    
-    // Tier 2: SSVid.net
-    const tier2Result = await trySSVid(cleanUrl);
-    results.tiers.push({ tier: 2, source: 'ssvid', ...tier2Result });
-    
-    if (tier2Result.success) {
-      results.success = true;
-      results.data = tier2Result.data;
+      console.log(`🎉 ENHANCED SUCCESS: ${result.method} (${result.service}) - Tier ${result.tier}`);
       return res.json(results);
+    } else {
+      // All tiers failed - return comprehensive error
+      results.error = result.error;
+      results.platform = result.platform;
+      results.progressLog = progressLog;
+      results.stats = downloader.getStats();
+      
+      console.log(`💥 ENHANCED FAILURE: ${result.error}`);
+      return res.status(400).json(results);
     }
-    
-    // Tier 3: Squidlr.com
-    const tier3Result = await trySquidlr(cleanUrl, platform);
-    results.tiers.push({ tier: 3, source: 'squidlr', ...tier3Result });
-    
-    if (tier3Result.success) {
-      results.success = true;
-      results.data = tier3Result.data;
-      return res.json(results);
-    }
-    
-    // Tier 4: Railway backend fallback
-    const tier4Result = await tryRailwayBackend(cleanUrl);
-    results.tiers.push({ tier: 4, source: 'railway', ...tier4Result });
-    
-    if (tier4Result.success) {
-      results.success = true;
-      results.data = tier4Result.data;
-      return res.json(results);
-    }
-    
-    // Tier 5: Vercel backend fallback
-    const tier5Result = await tryVercelBackend(cleanUrl);
-    results.tiers.push({ tier: 5, source: 'vercel', ...tier5Result });
-    
-    if (tier5Result.success) {
-      results.success = true;
-      results.data = tier5Result.data;
-      return res.json(results);
-    }
-    
-    // Tier 6: Local yt-dlp fallback (final attempt)
-    const tier6Result = await tryLocalYtDlp(cleanUrl);
-    results.tiers.push({ tier: 6, source: 'local_ytdlp', ...tier6Result });
-    
-    if (tier6Result.success) {
-      results.success = true;
-      results.data = tier6Result.data;
-      return res.json(results);
-    }
-    
-    // All tiers failed
-    console.log('❌ ALL 6 TIERS FAILED');
-    results.error = 'All download methods failed';
-    return res.status(500).json(results);
     
   } catch (error) {
-    console.error('💥 CRITICAL ERROR:', error);
-    results.error = error.message;
+    console.error('❌ Comprehensive Downloader Suite error:', error);
+    results.error = `Enhanced downloader failed: ${error.message}`;
     return res.status(500).json(results);
+  } finally {
+    // Always close the browser
+    if (downloader) {
+      try {
+        await downloader.close();
+      } catch (closeError) {
+        console.error('⚠️ Error closing downloader:', closeError.message);
+      }
+    }
   }
 });
 
