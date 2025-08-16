@@ -15,13 +15,13 @@
  * - Enhanced error detection for service failures
  */
 
-const { chromium } = require('playwright');
+const StealthBrowserManager = require('./stealth-config');
 const fs = require('fs').promises;
 const path = require('path');
 
 class ComprehensiveDownloaderSuite {
   constructor(options = {}) {
-    this.browser = null;
+    this.stealthBrowser = null;
     this.page = null;
     this.config = {
       headless: options.headless || false,
@@ -32,6 +32,7 @@ class ComprehensiveDownloaderSuite {
       downloadPath: options.downloadPath || './downloads',
       enableLogging: options.enableLogging !== false,
       rateLimitDelay: options.rateLimitDelay || 2000,
+      enableCaptchaSolving: options.enableCaptchaSolving !== false,
       ...options
     };
     
@@ -52,85 +53,23 @@ class ComprehensiveDownloaderSuite {
   }
 
   async initialize() {
-    this.log('🚀 Initializing Comprehensive Downloader Suite...');
+    this.log('🚀 Initializing Stealth Comprehensive Downloader Suite...');
     
     // Ensure download directory exists
     await fs.mkdir(this.config.downloadPath, { recursive: true });
     
-    // Production-grade browser configuration for Ubuntu/Fly.io
-    const launchOptions = this.config.browserOptions || {
-      headless: this.config.headless !== false ? 'new' : false, // Use new headless mode
-      // Don't specify executablePath - let Playwright use its bundled Chrome
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-background-networking',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI,VizDisplayCompositor',
-        '--disable-ipc-flooding-protection',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-component-extensions-with-background-pages',
-        '--disable-default-apps',
-        '--disable-extensions',
-        '--disable-features=Translate',
-        '--disable-background-timer-throttling',
-        '--disable-renderer-backgrounding',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-domain-reliability',
-        '--disable-sync',
-        '--disable-client-side-phishing-detection',
-        '--disable-features=VizDisplayCompositor',
-        '--run-all-compositor-stages-before-draw',
-        '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection',
-        '--enable-features=NetworkService,NetworkServiceLogging',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor',
-        '--force-color-profile=srgb',
-        '--metrics-recording-only',
-        '--disable-prompt-on-repost',
-        '--disable-hang-monitor',
-        '--disable-client-side-phishing-detection',
-        '--disable-component-update',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--no-pings',
-        '--password-store=basic',
-        '--use-mock-keychain',
-        '--disable-features=VizDisplayCompositor',
-        '--aggressive-cache-discard',
-        '--memory-pressure-off',
-        '--max_old_space_size=4096',
-        '--shm-size=1gb'
-      ]
-    };
-    
-    this.browser = await chromium.launch(launchOptions);
-
-    this.page = await this.browser.newPage();
-    
-    // Enhanced stealth setup
-    await this.page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    // Initialize stealth browser with Patchright and anti-detection
+    this.stealthBrowser = new StealthBrowserManager({
+      headless: this.config.headless,
+      downloadPath: this.config.downloadPath,
+      enableLogging: this.config.enableLogging,
+      enableCaptchaSolving: this.config.enableCaptchaSolving
     });
-
-    await this.page.setViewportSize({ width: 1366, height: 768 });
     
-    // Anti-detection measures
-    await this.page.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
-      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-      window.chrome = { runtime: {} };
-    });
-
-    this.log('✅ Initialization complete');
+    // Launch stealth browser
+    this.page = await this.stealthBrowser.launch();
+    
+    this.log('✅ Stealth browser initialization complete with Patchright');
   }
 
   detectPlatform(url) {
@@ -171,53 +110,8 @@ class ComprehensiveDownloaderSuite {
   }
 
   async setupDownloadInterception() {
-    let downloadUrl = null;
-    let downloadStarted = false;
-    let downloadedFilePath = null;
-    const interceptedUrls = new Set();
-
-    this.page.on('download', async download => {
-      downloadUrl = download.url();
-      downloadStarted = true;
-      interceptedUrls.add(downloadUrl);
-      this.log(`📥 Download intercepted: ${downloadUrl}`);
-      
-      // Download the file within the browser session to avoid IP restrictions
-      try {
-        const filename = `browser_download_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp4`;
-        const filePath = path.join(this.config.downloadPath, filename);
-        
-        // Ensure download directory exists
-        await fs.mkdir(this.config.downloadPath, { recursive: true });
-        
-        // Save the download
-        await download.saveAs(filePath);
-        downloadedFilePath = filePath;
-        this.log(`💾 File saved via browser: ${filePath}`);
-      } catch (saveError) {
-        this.log(`⚠️ Browser save failed, will use URL: ${saveError.message}`);
-        await download.cancel();
-      }
-    });
-
-    this.page.on('response', response => {
-      const responseUrl = response.url();
-      const contentType = response.headers()['content-type'] || '';
-      
-      if (this.isValidVideoUrl(responseUrl, contentType) && !interceptedUrls.has(responseUrl)) {
-        downloadUrl = responseUrl;
-        downloadStarted = true;
-        interceptedUrls.add(responseUrl);
-        this.log(`🎬 Video URL intercepted: ${responseUrl}`);
-      }
-    });
-
-    return { 
-      getDownloadUrl: () => downloadUrl, 
-      isDownloadStarted: () => downloadStarted,
-      getDownloadedFile: () => downloadedFilePath,
-      getAllUrls: () => Array.from(interceptedUrls)
-    };
+    // Use stealth browser's advanced download interception
+    return await this.stealthBrowser.setupDownloadInterception();
   }
 
   /**
@@ -234,7 +128,7 @@ class ComprehensiveDownloaderSuite {
     const { getDownloadUrl, isDownloadStarted, getDownloadedFile } = await this.setupDownloadInterception();
     
     const platformUrl = `https://getloady.com/${platform}`;
-    await this.page.goto(platformUrl, { waitUntil: 'networkidle', timeout: 30000 });
+    await this.stealthBrowser.navigateTo(platformUrl);
     
     // Handle modal dialog
     try {
@@ -258,7 +152,7 @@ class ComprehensiveDownloaderSuite {
     for (const selector of inputSelectors) {
       try {
         await this.page.waitForSelector(selector, { timeout: 5000 });
-        await this.page.fill(selector, url);
+        await this.stealthBrowser.typeHumanLike(selector, url);
         inputFilled = true;
         this.log(`✏️ Input filled with: ${selector}`);
         break;
@@ -285,7 +179,7 @@ class ComprehensiveDownloaderSuite {
     let buttonClicked = false;
     for (const text of buttonTexts) {
       try {
-        await this.page.click(`button:has-text("${text}")`, { timeout: 3000 });
+        await this.stealthBrowser.clickHumanLike(`button:has-text("${text}")`); 
         buttonClicked = true;
         this.log(`🔘 Clicked button: ${text}`);
         break;
@@ -419,7 +313,7 @@ class ComprehensiveDownloaderSuite {
     
     const { getDownloadUrl, isDownloadStarted, getDownloadedFile } = await this.setupDownloadInterception();
     
-    await this.page.goto('https://ssvid.net/en', { waitUntil: 'networkidle', timeout: 30000 });
+    await this.stealthBrowser.navigateTo('https://ssvid.net/en');
     
     // Wait for page load and find search input
     await this.page.waitForSelector('input[role="searchbox"], #search__input, input[type="search"]', { timeout: 10000 });
@@ -429,7 +323,7 @@ class ComprehensiveDownloaderSuite {
     
     for (const selector of searchSelectors) {
       try {
-        await this.page.fill(selector, url);
+        await this.stealthBrowser.typeHumanLike(selector, url);
         inputFilled = true;
         this.log(`✏️ SSVid input filled with: ${selector}`);
         break;
@@ -443,7 +337,7 @@ class ComprehensiveDownloaderSuite {
     }
 
     // Click Start button
-    await this.page.click('button:has-text("Start"), button:has-text("Download")');
+    await this.stealthBrowser.clickHumanLike('button:has-text("Start"), button:has-text("Download")');
     this.log('🔘 SSVid: Clicked Start button');
 
     // Enhanced processing with actual download triggering
@@ -555,14 +449,14 @@ class ComprehensiveDownloaderSuite {
     
     const { getDownloadUrl, isDownloadStarted, getDownloadedFile } = await this.setupDownloadInterception();
     
-    await this.page.goto('https://www.squidlr.com/', { waitUntil: 'networkidle', timeout: 30000 });
+    await this.stealthBrowser.navigateTo('https://www.squidlr.com/');
     
     // Wait for Blazor initialization
-    await this.page.waitForTimeout(3000);
+    await this.stealthBrowser.randomDelay(2000, 4000);
     
     // Fill URL input
     await this.page.waitForSelector('textbox, input[placeholder*="URL"]', { timeout: 10000 });
-    await this.page.fill('textbox', url);
+    await this.stealthBrowser.typeHumanLike('textbox', url);
     this.log('✏️ Squidlr: URL input filled');
     
     // Squidlr auto-processes, wait for redirect
@@ -660,14 +554,14 @@ class ComprehensiveDownloaderSuite {
     
     const { getDownloadUrl, isDownloadStarted, getDownloadedFile } = await this.setupDownloadInterception();
     
-    await this.page.goto('https://cobalt.tools/', { waitUntil: 'networkidle', timeout: 30000 });
+    await this.stealthBrowser.navigateTo('https://cobalt.tools/');
     
     // Wait for Cloudflare and any loading
-    await this.page.waitForTimeout(5000);
+    await this.stealthBrowser.randomDelay(3000, 7000);
     
     // Fill URL input
     await this.page.waitForSelector('textbox[aria-label*="link input"], input[aria-label*="link input"]', { timeout: 10000 });
-    await this.page.fill('textbox[aria-label*="link input"]', url);
+    await this.stealthBrowser.typeHumanLike('textbox[aria-label*="link input"]', url);
     this.log('✏️ Cobalt: URL input filled');
     
     // Submit by pressing Enter
@@ -952,10 +846,10 @@ class ComprehensiveDownloaderSuite {
   }
 
   async close() {
-    if (this.browser) {
-      await this.browser.close();
+    if (this.stealthBrowser) {
+      await this.stealthBrowser.close();
     }
-    this.log('🔴 Downloader closed');
+    this.log('🔴 Stealth downloader closed');
   }
 }
 

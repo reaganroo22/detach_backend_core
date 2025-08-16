@@ -11,6 +11,7 @@ const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
 const { createWriteStream } = require('fs');
+const ComprehensiveDownloaderSuite = require('./comprehensive-downloader-suite');
 
 const app = express();
 app.use(cors());
@@ -303,42 +304,15 @@ app.post('/download', async (req, res) => {
     console.log(`🌐 Using browser automation with proper timeouts for ${platform}...`);
     
     try {
-      const ComprehensiveDownloaderSuite = require('./comprehensive-downloader-suite');
-      
-      console.log('🚀 Initializing browser automation...');
+      console.log('🚀 Initializing stealth browser automation with Patchright and 2Captcha...');
       const downloader = new ComprehensiveDownloaderSuite({
-        headless: process.env.HEADLESS !== 'false' ? 'new' : false,
+        headless: process.env.HEADLESS !== 'false',
         qualityPreference: 'highest',
         enableLogging: true,
         retryAttempts: 2,
-        downloadTimeout: 90000, // 90 seconds - proper time for automation
-        browserOptions: {
-          // Don't specify executablePath - let Playwright use its bundled Chrome
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-extensions',
-            '--disable-plugins',
-            '--mute-audio',
-            '--disable-background-timer-throttling',
-            '--disable-renderer-backgrounding',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-features=TranslateUI',
-            '--disable-ipc-flooding-protection',
-            '--enable-features=NetworkService,NetworkServiceLogging',
-            '--force-color-profile=srgb',
-            '--disable-component-update',
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--password-store=basic',
-            '--use-mock-keychain',
-            '--shm-size=1gb'
-          ]
-        }
+        downloadTimeout: 120000, // 2 minutes for stealth operations
+        enableCaptchaSolving: process.env.ENABLE_CAPTCHA_SOLVING !== 'false',
+        downloadPath: process.env.DOWNLOAD_PATH || './downloads'
       });
       
       await downloader.initialize();
