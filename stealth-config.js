@@ -123,25 +123,25 @@ class StealthBrowserManager {
       }
     });
 
-    this.page = await this.browser.newPage();
-    
-    // Set realistic headers
-    await this.page.setExtraHTTPHeaders({
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'DNT': '1',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
-      'Cache-Control': 'max-age=0'
+    // Create new context with user agent
+    const context = await this.browser.newContext({
+      userAgent: this.config.userAgent,
+      viewport: this.config.viewport,
+      extraHTTPHeaders: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Cache-Control': 'max-age=0'
+      }
     });
 
-    // Set viewport and user agent
-    await this.page.setViewportSize(this.config.viewport);
-    await this.page.setUserAgent(this.config.userAgent);
+    this.page = await context.newPage();
 
     // Advanced anti-detection scripts
     await this.page.addInitScript(() => {
