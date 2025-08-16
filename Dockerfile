@@ -19,6 +19,10 @@ COPY package*.json ./
 # Install Node.js dependencies
 RUN npm ci --omit=dev
 
+# Install Playwright browsers for Patchright
+RUN npx playwright install chromium --force
+RUN npx patchright install chromium --force || npx playwright install chromium --force
+
 # Copy the application code
 COPY . .
 
