@@ -10,8 +10,7 @@ import {
   Dimensions,
   Image,
 } from 'react-native';
-import { Video } from 'expo-av';
-import { Audio } from 'expo-av';
+import { Video, Audio, ResizeMode } from 'expo-av';
 import { X, Play, Pause, Volume2, VolumeX, SkipBack, SkipForward } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system';
 import { DownloadItem } from '../services/downloadService';
@@ -278,7 +277,7 @@ export default function ProperMediaViewer({ item, visible, onClose }: ProperMedi
           style={[styles.video, styles.blackAndWhite]}
           source={{ uri: item.filePath! }}
           useNativeControls={false}
-          resizeMode="contain"
+          resizeMode={ResizeMode.CONTAIN}
           isLooping={false}
           onPlaybackStatusUpdate={onVideoStatusUpdate}
           shouldPlay={false}
@@ -385,7 +384,7 @@ export default function ProperMediaViewer({ item, visible, onClose }: ProperMedi
           <Image 
             source={{ uri: imageUri }} 
             style={[styles.image, styles.blackAndWhite]}
-            resizeMode="contain"
+            resizeMode={ResizeMode.CONTAIN}
           />
         ) : (
           <Text style={styles.errorText}>{'No image available'}</Text>

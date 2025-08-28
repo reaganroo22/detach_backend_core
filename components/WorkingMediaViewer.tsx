@@ -10,7 +10,7 @@ import {
   Dimensions,
   Image,
 } from 'react-native';
-import { Video, VideoView } from 'expo-video';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAudioPlayer } from 'expo-audio';
 import { X, Play, Pause, Volume2, VolumeX, SkipBack, SkipForward } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system';
@@ -51,7 +51,7 @@ export default function WorkingMediaViewer({ item, visible, onClose }: WorkingMe
   useEffect(() => {
     if (player) {
       const subscription = player.addListener('playbackStatusUpdate', (status) => {
-        setIsPlaying(status.isPlaying || false);
+        setIsPlaying(status.playing || false);
         setDuration(status.duration || 0);
         setPosition(status.currentTime || 0);
       });
@@ -118,7 +118,7 @@ export default function WorkingMediaViewer({ item, visible, onClose }: WorkingMe
   };
 
   const toggleMute = () => {
-    player.setVolume(isMuted ? 1.0 : 0.0);
+    player.volume = isMuted ? 1.0 : 0.0;
     setIsMuted(!isMuted);
   };
 
@@ -162,7 +162,7 @@ export default function WorkingMediaViewer({ item, visible, onClose }: WorkingMe
       <View style={styles.videoPlayerWrapper}>
         <VideoView
           style={styles.video}
-          player={new Video({ uri: videoSource! })}
+          player={useVideoPlayer(videoSource!)}
           allowsFullscreen
           allowsPictureInPicture
           contentFit="contain"
