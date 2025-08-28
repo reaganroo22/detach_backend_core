@@ -37,9 +37,54 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# detach backend
+# detach backend (development files - not needed for App Store)
+detach_backend_core/
+sieve-backend.js
+*backend*.js
+*downloader*.js
+*playwright*.js
+*tier*.js
+*test*.js
+*-mcp*.js
 
+# development files
+enhanced-*.js
+comprehensive-*.js
+verified-*.js
+universal-*.js
+bulletproof-*.js
 
-# homepage images
+# testing and automation files
+docker-compose*.yml
+test-*.js
+*.test.js
+*.spec.js
+
+# documentation files
+*.md
+!README.md
+VPS_*.md
+LOCAL_*.md
+DEV_*.md
+AUTHENTICATION_*.md
+DEPLOYMENT*.md
+
+# configuration files for backend deployment
+fly.toml
+railway.toml
+vercel.json
+nixpacks.toml
+Dockerfile*
+*.env.example
+production.env
+*.sh
+*.bat
+*.ps1
+
+# homepage images and screenshots
 squidlr-homepage.png
 ssvid-homepage.png
+*.png
+*.jpg
+*.jpeg
+!assets/**
