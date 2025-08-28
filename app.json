@@ -41,12 +41,6 @@
             "CFBundleURLSchemes": [
               "com.temperance.app"
             ]
-          },
-          {
-            "CFBundleURLName": "Google Sign-In",
-            "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.853021963659-e42d9v8klqddiibodqm2bids30c3tftr"
-            ]
           }
         ],
         "ITSAppUsesNonExemptEncryption": false
@@ -69,8 +63,7 @@
       "expo-web-browser",
       "expo-video",
       "expo-audio",
-      "expo-apple-authentication",
-
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true
