@@ -43,9 +43,9 @@
             ]
           },
           {
-            "CFBundleURLName": "com.temperance.app",
+            "CFBundleURLName": "Google Sign-In",
             "CFBundleURLSchemes": [
-              "com.temperance.app"
+              "com.googleusercontent.apps.853021963659-e42d9v8klqddiibodqm2bids30c3tftr"
             ]
           }
         ],
@@ -70,12 +70,7 @@
       "expo-video",
       "expo-audio",
       "expo-apple-authentication",
-      [
-        "@react-native-google-signin/google-signin",
-        {
-          "iosUrlScheme": "com.googleusercontent.apps.853021963659-e42d9v8klqddiibodqm2bids30c3tftr"
-        }
-      ]
+
     ],
     "experiments": {
       "typedRoutes": true
