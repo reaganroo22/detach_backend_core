@@ -253,13 +253,41 @@ class DownloadService {
     try {
       const healthUrl = getApiUrl(API_CONFIG.ENDPOINTS.HEALTH);
       console.log('🔍 Testing backend connectivity to:', healthUrl);
+      console.log('🔧 API_CONFIG.BASE_URL:', API_CONFIG.BASE_URL);
+      
       const response = await axios.get(healthUrl, {
-        timeout: 15000 // Increased timeout for cold starts
+        timeout: 15000, // Increased timeout for cold starts
+        headers: {
+          'User-Agent': 'Detach-iOS-App/1.0.0',
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache'
+        }
       });
       console.log('✅ Backend health check passed:', response.status);
+      console.log('📊 Response data:', response.data);
       return response.status === 200;
-    } catch (error) {
-      console.error('Backend connectivity test failed:', error);
+    } catch (error: any) {
+      console.error('❌ Backend connectivity test failed:', error.message);
+      console.error('🔍 Error details:', {
+        code: error.code,
+        status: error.response?.status,
+        data: error.response?.data,
+        config: {
+          url: error.config?.url,
+          method: error.config?.method,
+          timeout: error.config?.timeout
+        }
+      });
+      
+      // Try to provide more specific error information
+      if (error.code === 'NETWORK_ERROR' || error.message === 'Network Error') {
+        console.error('🚨 Network Error - This might be due to:');
+        console.error('   1. iOS simulator network restrictions');
+        console.error('   2. HTTP vs HTTPS configuration issues');
+        console.error('   3. VPS firewall blocking requests');
+        console.error('   4. DNS resolution problems');
+      }
+      
       return false;
     }
   }
@@ -280,9 +308,12 @@ class DownloadService {
       const isBackendOnline = await this.testBackendConnectivity();
       if (!isBackendOnline) {
         console.error('❌ Backend connectivity test failed');
-        throw new Error('Backend server is currently unavailable. Please check your internet connection and try again later.');
+        console.log('⚠️ Attempting to proceed anyway for development testing...');
+        // Don't throw error in development - try to proceed anyway
+        // throw new Error('Backend server is currently unavailable. Please check your internet connection and try again later.');
+      } else {
+        console.log('✅ Backend connectivity confirmed');
       }
-      console.log('✅ Backend connectivity confirmed');
 
       item.status = 'downloading';
       this.downloads.set(id, item);
@@ -290,6 +321,7 @@ class DownloadService {
       console.log('📊 Status updated to downloading');
 
       // Use universal backend with 6-tier fallback system
+      console.log('🚀 Attempting direct download API call...');
       const downloadData = await this.getUniversalDownloadUrl(item.url);
 
       if (!downloadData) {

@@ -38,8 +38,7 @@ yarn-error.*
 *.tsbuildinfo
 
 # detach backend
-detach_backend/
-detach_backend_core/
+
 
 # homepage images
 squidlr-homepage.png

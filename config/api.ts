@@ -11,8 +11,8 @@ const getBackendUrl = () => {
     return envUrl.trim();
   }
 
-  // Use production backend for all environments
-  return 'https://detach-backend-core.fly.dev';
+  // Use HTTPS tunnel for iOS compatibility
+  return 'https://c80dbb43d8a6.ngrok-free.app';
 };
 
 export const API_CONFIG = {

@@ -22,6 +22,16 @@
       "infoPlist": {
         "NSCameraUsageDescription": "This app does not use the camera",
         "NSMicrophoneUsageDescription": "This app does not use the microphone",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSExceptionDomains": {
+            "69.48.202.90": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "1.0",
+              "NSIncludesSubdomains": true
+            }
+          }
+        },
         "UIBackgroundModes": [
           "audio"
         ],
@@ -72,7 +82,7 @@
     },
     "extra": {
       "router": {},
-      "apiBaseUrl": "${EXPO_PUBLIC_API_BASE_URL}",
+      "apiBaseUrl": "https://c80dbb43d8a6.ngrok-free.app",
       "supabaseUrl": "${EXPO_PUBLIC_SUPABASE_URL}",
       "supabaseAnonKey": "${EXPO_PUBLIC_SUPABASE_ANON_KEY}",
       "eas": {
