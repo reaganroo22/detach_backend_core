@@ -11,23 +11,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as AppleAuthentication from 'expo-apple-authentication';
-// Conditional import for Expo Go compatibility
-let GoogleSigninButton;
-try {
-  const googleSignInModule = require('@react-native-google-signin/google-signin');
-  GoogleSigninButton = googleSignInModule.GoogleSigninButton;
-} catch (error) {
-  console.warn('Google Sign-In not available in Expo Go');
-}
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import GoogleIcon from './icons/GoogleIcon';
 import AppleIcon from './icons/AppleIcon';
 
 export default function LoginScreen() {
-  const { signInWithGoogle, signInWithApple } = useAuth();
+  const { signInWithApple } = useAuth();
   const { theme } = useTheme();
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
   const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
 
@@ -39,16 +29,6 @@ export default function LoginScreen() {
     checkAppleAuthAvailability();
   }, []);
 
-  const handleGoogleSignIn = async () => {
-    try {
-      setGoogleLoading(true);
-      await signInWithGoogle();
-    } catch (error: any) {
-      Alert.alert('Sign In Error', error.message || 'Failed to sign in with Google');
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
 
   const handleAppleSignIn = async () => {
     try {
@@ -143,49 +123,6 @@ export default function LoginScreen() {
       marginLeft: 10,
       fontFamily: 'SF Pro Display', // Apple's official font
     },
-    // Google button wrapper for size control
-    googleButtonWrapper: {
-      width: '100%',
-      height: 50,
-      marginBottom: 20,
-      overflow: 'hidden',
-      borderRadius: 8,
-    },
-    // Google button - native button styling  
-    googleButton: {
-      width: '100%',
-      height: 50,
-      transform: [{ scaleX: 1.0 }], // Force scaling if needed
-    },
-    // Google button fallback for Expo Go
-    googleButtonFallback: {
-      backgroundColor: '#FFFFFF',
-      paddingHorizontal: 24,
-      paddingVertical: 16,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: '#dadce0',
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: 20,
-      height: 50,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-      elevation: 1,
-    },
-    googleButtonDisabled: {
-      opacity: 0.6,
-    },
-    googleButtonText: {
-      color: '#3c4043', // Google's official text color
-      fontSize: 16,
-      fontWeight: '500',
-      marginLeft: 12,
-      fontFamily: 'Roboto', // Google's official font
-    },
     signInRequiredText: {
       fontSize: 12,
       color: '#a16207', // Laudate theme color
@@ -237,8 +174,7 @@ export default function LoginScreen() {
               buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
               cornerRadius={8}
               style={[styles.appleButton, appleLoading && styles.appleButtonDisabled]}
-              onPress={handleAppleSignIn}
-              disabled={appleLoading || googleLoading}
+              onPress={appleLoading ? () => {} : handleAppleSignIn}
             />
           </View>
         ) : Platform.OS === 'ios' ? (
@@ -248,7 +184,7 @@ export default function LoginScreen() {
               appleLoading && styles.appleButtonDisabled,
             ]}
             onPress={handleAppleSignIn}
-            disabled={appleLoading || googleLoading}
+            disabled={appleLoading}
           >
             {appleLoading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />

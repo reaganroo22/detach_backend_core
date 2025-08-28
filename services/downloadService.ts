@@ -374,11 +374,38 @@ class DownloadService {
       
       // Simplified - no playlist handling, all downloads are individual files
 
-      const extension = this.getFileExtension(item.contentType, item.platform);
-      const fileName = `${id}_${item.platform}_${item.contentType}.${extension}`;
+      // First, do a HEAD request to get the actual Content-Type
+      let actualContentType = 'audio/mpeg'; // Default fallback
+      let actualExtension = 'mp3'; // Default fallback
+      
+      try {
+        const headResponse = await axios.head(downloadUrl, { timeout: 10000 });
+        actualContentType = headResponse.headers['content-type'] || actualContentType;
+        console.log('🔍 Actual Content-Type from server:', actualContentType);
+        
+        // Map Content-Type to proper file extension
+        if (actualContentType.includes('audio/mpeg') || actualContentType.includes('audio/mp3')) {
+          actualExtension = 'mp3';
+        } else if (actualContentType.includes('audio/mp4') || actualContentType.includes('audio/aac')) {
+          actualExtension = 'm4a';
+        } else if (actualContentType.includes('video/mp4')) {
+          actualExtension = 'mp4';
+        } else if (actualContentType.includes('video/webm')) {
+          actualExtension = 'webm';
+        } else if (actualContentType.includes('audio/')) {
+          actualExtension = 'mp3'; // Default for any audio
+        } else if (actualContentType.includes('video/')) {
+          actualExtension = 'mp4'; // Default for any video
+        }
+      } catch (headError) {
+        console.log('⚠️ Could not get Content-Type via HEAD request, using default extension');
+      }
+      
+      console.log('📁 Using file extension:', actualExtension, 'for Content-Type:', actualContentType);
+      const fileName = `${id}_${item.platform}_${item.contentType}.${actualExtension}`;
       const filePath = `${this.downloadDirectory}${fileName}`;
       
-      item.fileExtension = extension;
+      item.fileExtension = actualExtension;
 
       // Start with some progress
       item.progress = 10;
@@ -412,8 +439,39 @@ class DownloadService {
       
       console.log('Download result:', downloadResult);
       
+      // Check the actual Content-Type from the download response
+      let finalFilePath = filePath;
+      if (downloadResult?.headers && downloadResult.headers['content-type']) {
+        const downloadContentType = downloadResult.headers['content-type'];
+        console.log('📋 Download response Content-Type:', downloadContentType);
+        
+        // Check if we need to rename the file based on actual Content-Type
+        let correctExtension = actualExtension;
+        if (downloadContentType.includes('audio/mpeg') && actualExtension !== 'mp3') {
+          correctExtension = 'mp3';
+        } else if (downloadContentType.includes('audio/mp4') && actualExtension !== 'm4a') {
+          correctExtension = 'm4a';
+        } else if (downloadContentType.includes('video/mp4') && actualExtension !== 'mp4') {
+          correctExtension = 'mp4';
+        }
+        
+        if (correctExtension !== actualExtension) {
+          console.log(`🔄 Renaming file from .${actualExtension} to .${correctExtension} based on actual Content-Type`);
+          const correctFileName = `${id}_${item.platform}_${item.contentType}.${correctExtension}`;
+          const correctFilePath = `${this.downloadDirectory}${correctFileName}`;
+          
+          try {
+            await FileSystem.moveAsync({ from: filePath, to: correctFilePath });
+            finalFilePath = correctFilePath;
+            item.fileExtension = correctExtension;
+          } catch (renameError) {
+            console.log('⚠️ Could not rename file, keeping original extension');
+          }
+        }
+      }
+      
       // Check if file was actually downloaded
-      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      const fileInfo = await FileSystem.getInfoAsync(finalFilePath);
       console.log('Downloaded file info:', fileInfo);
 
       // Clear the progress interval
@@ -421,8 +479,8 @@ class DownloadService {
 
       item.status = 'completed';
       item.progress = 100;
-      // Use downloadResult.uri if available, otherwise use the original filePath
-      item.filePath = downloadResult?.uri || filePath;
+      // Use downloadResult.uri if available, otherwise use the final file path
+      item.filePath = downloadResult?.uri || finalFilePath;
       item.downloadedAt = new Date().toISOString();
       
       this.downloads.set(id, item);

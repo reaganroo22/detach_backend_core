@@ -11,8 +11,8 @@ const getBackendUrl = () => {
     return envUrl.trim();
   }
 
-  // Use VPS backend directly
-  return 'http://69.48.202.90';
+  // Use HTTPS tunnel for iOS compatibility
+  return 'https://8b93460a685e.ngrok-free.app';
 };
 
 export const API_CONFIG = {
