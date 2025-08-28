@@ -11,8 +11,8 @@ const getBackendUrl = () => {
     return envUrl.trim();
   }
 
-  // Use HTTPS tunnel for iOS compatibility
-  return 'https://c80dbb43d8a6.ngrok-free.app';
+  // Use VPS backend directly
+  return 'http://69.48.202.90';
 };
 
 export const API_CONFIG = {
@@ -24,7 +24,7 @@ export const API_CONFIG = {
     HEALTH: '/health', // Health endpoint
     DOWNLOAD: '/download', // Universal endpoint for all platforms
     PLATFORMS: '/platforms', // Get supported platforms
-    FILE: '/file' // File serving endpoint
+    FILE: '/files' // File serving endpoint - matches VPS backend
   },
   
   // Legacy endpoints (kept for backward compatibility)

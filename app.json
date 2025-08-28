@@ -82,7 +82,7 @@
     },
     "extra": {
       "router": {},
-      "apiBaseUrl": "https://c80dbb43d8a6.ngrok-free.app",
+      "apiBaseUrl": "http://69.48.202.90",
       "supabaseUrl": "${EXPO_PUBLIC_SUPABASE_URL}",
       "supabaseAnonKey": "${EXPO_PUBLIC_SUPABASE_ANON_KEY}",
       "eas": {
