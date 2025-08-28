@@ -44,7 +44,7 @@ async function downloadWithSieveAPI(url, userPrefs) {
         include_subtitles: false,
         subtitle_languages: [],
         video_format: 'mp4',
-        audio_format: userPrefs.format === 'audio' ? 'mp3' : 'mp4',
+        audio_format: userPrefs.format === 'audio' ? 'aac' : 'mp4',
         subtitle_format: 'vtt'
       }
     }, {
