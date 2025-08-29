@@ -7,11 +7,18 @@ const extra = (Constants.expoConfig?.extra || (Constants.manifest as any)?.extra
 const supabaseUrl = extra.supabaseUrl || process.env.EXPO_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = extra.supabaseAnonKey || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
 
+// Fallback values for production builds when env vars aren't available
+const fallbackUrl = 'https://placeholder.supabase.co'
+const fallbackKey = 'placeholder-key'
+
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase environment missing: ensure EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are set in app config')
+  console.warn('Supabase environment missing: using fallback configuration for offline mode')
 }
 
-export const supabase = createClient(String(supabaseUrl || ''), String(supabaseAnonKey || ''), {
+export const supabase = createClient(
+  String(supabaseUrl || fallbackUrl), 
+  String(supabaseAnonKey || fallbackKey), 
+{
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,

@@ -26,11 +26,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     experiments: base.experiments || config.experiments,
     extra: {
       ...(base.extra || {}),
-      apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
-      supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
-      supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
-      googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-      googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+      apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || base.extra?.apiBaseUrl,
+      supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || base.extra?.supabaseUrl,
+      supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || base.extra?.supabaseAnonKey,
       eas: base.extra?.eas,
     },
   } as ExpoConfig;
