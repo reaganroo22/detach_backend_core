@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Download, Trash2, Folder, Copy, Eye, Headphones, FileText, ImageIcon, Video, FolderPlus, Archive, Edit3, MoreHorizontal, Settings, Plus } from 'lucide-react-native';
 import { downloadService, DownloadItem, Folder as FolderType } from '../../services/downloadService';
 import { playlistService } from '../../services/playlistService';
-import EnhancedMediaViewer from '../../components/EnhancedMediaViewer';
+import SafeMediaViewer from '../../components/SafeMediaViewer';
 import { useTheme } from '../../contexts/ThemeContext';
 import { router } from 'expo-router';
 
@@ -719,7 +719,7 @@ export default function LibraryTab() {
       </ScrollView>
       
       {selectedItem && (
-        <EnhancedMediaViewer
+        <SafeMediaViewer
           item={selectedItem}
           visible={mediaViewerVisible}
           onClose={handleCloseMediaViewer}
